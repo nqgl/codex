@@ -286,7 +286,9 @@ impl PtyCodex {
         }
 
         if !self.keyboard_answered && contains_bytes(&self.output, b"\x1b[?u") {
-            self.write_input(b"\x1b[?0u\x1b[?1;2c")?;
+            // This PTY driver sends legacy bytes, not Kitty repeat/release events.
+            // A Kitty reply would advertise capabilities the driver does not implement.
+            self.write_input(b"\x1b[?1;2c")?;
             self.keyboard_answered = true;
         }
 

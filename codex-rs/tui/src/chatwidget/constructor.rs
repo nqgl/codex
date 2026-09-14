@@ -33,6 +33,7 @@ impl ChatWidget {
             terminal_title_invalid_items_warned,
             session_telemetry,
         } = common;
+        crate::math_render::initialize(app_event_tx.clone());
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
         config.model = model.clone();
@@ -111,6 +112,9 @@ impl ChatWidget {
                 animations_enabled: local_settings.tui.animations,
                 skills: None,
             }),
+            dictation: DictationState::new(
+                enhanced_keys_supported && crate::tui::key_release_reporting_enabled(),
+            ),
             transcript: TranscriptState::new(active_cell),
             raw_output_mode: local_settings.tui.raw_output_mode,
             config,

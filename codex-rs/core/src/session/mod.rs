@@ -1800,6 +1800,8 @@ impl Session {
             let root_service_tier_changed = updated.parent_thread_id.is_none()
                 && state.session_configuration.step_settings.service_tier
                     != updated.step_settings.service_tier;
+            let multi_agent_max_concurrent_threads_changed =
+                updates.multi_agent_max_concurrent_threads;
             if mcp_inputs_changed {
                 self.mark_mcp_runtime_dirty();
             }
@@ -1824,6 +1826,11 @@ impl Session {
                         .service_tier
                         .clone(),
                 );
+            }
+            if let Some(max_threads) = multi_agent_max_concurrent_threads_changed {
+                self.services
+                    .agent_control
+                    .set_max_concurrent_threads(max_threads);
             }
             let new_config = notify_config_contributors
                 .then(|| self.build_effective_session_config(&state.session_configuration));
@@ -2420,7 +2427,7 @@ impl Session {
             parent_agent_path,
             Vec::new(),
             message,
-            /*trigger_turn*/ false,
+            /*trigger_turn*/ true,
         );
         let context =
             AgentCommunicationContext::new(AgentCommunicationKind::Result, self.thread_id);

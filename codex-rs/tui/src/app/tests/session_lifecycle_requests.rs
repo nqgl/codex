@@ -4372,7 +4372,7 @@ fn session_lifecycle_avoids_redundant_subagent_metadata_reads() -> Result<()> {
                     app.chat_widget.selected_index_for_present_view(
                         super::super::agent_picker::AGENT_PICKER_VIEW_ID
                     ),
-                    Some(1)
+                    Some(2)
                 );
                 assert!(render_bottom_popup(&app.chat_widget, /*width*/ 80).contains("echo hello"));
                 assert!(

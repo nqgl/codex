@@ -2057,6 +2057,23 @@ mod tests {
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
+            is_task_running: true,
+            queue_submissions: false,
+            collaboration_modes_enabled: false,
+            is_wsl: false,
+            quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
+            status_line_value: None,
+            status_line_enabled: false,
+            key_hints: FooterKeyHints::default_bindings(),
+            active_agent_label: Some("Main [default] · 2 subagents running".to_string()),
+        };
+
+        snapshot_footer("footer_running_subagents", props);
+
+        let props = FooterProps {
+            mode: FooterMode::ComposerEmpty,
+            esc_backtrack_hint: false,
+            use_shift_enter_hint: false,
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: false,

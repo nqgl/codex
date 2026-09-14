@@ -238,7 +238,7 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
     );
     assert!(
         description.contains(
-            "Do not set the `model` field unless the user explicitly asks for a different model."
+            "Do not set the `model` field unless the user explicitly asks for a different model or there is a clear task-specific reason."
         ),
         "expected model override usage guidance in spawn_agent description: {description:?}"
     );
@@ -256,7 +256,7 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
     );
     assert!(
         description.contains(
-            "Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work."
+            "Multi-agent delegation is now by explicit request: spawn sub-agents when the user, applicable AGENTS.md, or skill instructions ask for delegation or parallel agent work."
         ),
         "expected explicit authorization rule in spawn_agent description: {description:?}"
     );
@@ -268,7 +268,7 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
     );
     assert!(
         description.contains(
-            "Agent-role guidance below only helps choose which agent to use after spawning is already authorized; it never authorizes spawning by itself."
+            "The agent-role guidance below is for choosing which agent to use once spawning is appropriate; whether to spawn at all is decided separately by the session's delegation settings."
         ),
         "expected agent-role clarification in spawn_agent description: {description:?}"
     );

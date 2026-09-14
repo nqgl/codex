@@ -8,6 +8,7 @@ mod rollout_migration_state;
 mod thread_attachment;
 mod thread_goal;
 mod thread_metadata;
+mod thread_monitor;
 
 pub use backfill_state::BackfillState;
 pub use backfill_state::BackfillStatus;
@@ -47,6 +48,7 @@ pub use thread_metadata::ThreadSection;
 pub use thread_metadata::ThreadSectionAppearance;
 pub use thread_metadata::ThreadSectionsPage;
 pub use thread_metadata::ThreadsPage;
+pub use thread_monitor::ThreadMonitor;
 
 pub(crate) use thread_goal::ThreadGoalRow;
 pub(crate) use thread_metadata::ThreadRow;

@@ -1,11 +1,12 @@
 //! Multi-agent picker navigation and labeling state for the TUI app.
 //!
 //! This module exists to keep the pure parts of multi-agent navigation out of [`crate::app::App`].
-//! It owns the stable spawn-order cache used by the `/subagents` picker, keyboard next/previous
-//! navigation, and the contextual footer label for the thread currently being watched.
+//! It owns the stable spawn-order cache used by keyboard next/previous navigation, the
+//! recent-activity order used by the `/agent` and `/subagents` pickers, and the contextual footer
+//! label for the thread currently being watched.
 //!
 //! Responsibilities here are intentionally narrow:
-//! - remember picker entries and their first-seen order
+//! - remember picker entries, their first-seen order, and their latest observed activity
 //! - remember which V2 child threads are owned by their parent agent
 //! - answer traversal questions like "what is the next thread?"
 //! - derive user-facing picker/footer text from cached thread metadata
@@ -15,9 +16,9 @@
 //! - deciding which thread is currently displayed
 //! - mutating UI state such as switching threads or updating the footer widget
 //!
-//! The key invariant is that traversal follows first-seen spawn order rather than thread-id sort
-//! order. Once a thread id is observed it keeps its place in the cycle even if the entry is later
-//! updated or marked closed.
+//! The key invariant is that keyboard traversal follows first-seen spawn order rather than
+//! thread-id sort order. The picker may independently put recently active agents first without
+//! making next/previous navigation jump around as agents produce output.
 
 use crate::multi_agents::AgentPickerThreadEntry;
 use crate::multi_agents::SubAgentActivityDisplay;
@@ -43,8 +44,12 @@ use uuid::Uuid;
 pub(crate) struct AgentNavigationState {
     /// Latest picker metadata for each tracked thread id.
     threads: HashMap<ThreadId, AgentPickerThreadEntry>,
-    /// Stable first-seen traversal order for picker rows and keyboard cycling.
+    /// Stable first-seen traversal order for keyboard cycling and deterministic fallbacks.
     order: Vec<ThreadId>,
+    /// Monotonic local recency assigned when a thread is created or produces observable activity.
+    activity_order: HashMap<ThreadId, u64>,
+    /// Next value assigned in `activity_order`.
+    next_activity_order: u64,
     /// Threads with observed terminal liveness that must not be revived by delayed activity.
     stopped_threads: HashSet<ThreadId>,
     /// Spawned child threads whose instructions are owned by their parent agent.
@@ -137,6 +142,9 @@ impl AgentNavigationState {
                 is_closed,
             },
         );
+        if !self.activity_order.contains_key(&thread_id) {
+            self.record_activity(thread_id);
+        }
     }
 
     pub(crate) fn record_sub_agent_activity(&mut self, activity: SubAgentActivityDisplay) {
@@ -163,6 +171,14 @@ impl AgentNavigationState {
             entry.is_running = false;
             self.stopped_threads.insert(activity.thread_id);
         }
+        self.record_activity(activity.thread_id);
+    }
+
+    /// Records user-visible work or interaction for picker recency ordering.
+    pub(crate) fn record_activity(&mut self, thread_id: ThreadId) {
+        self.next_activity_order = self.next_activity_order.saturating_add(1);
+        self.activity_order
+            .insert(thread_id, self.next_activity_order);
     }
 
     pub(crate) fn mark_running(&mut self, thread_id: ThreadId) {
@@ -221,6 +237,8 @@ impl AgentNavigationState {
     pub(crate) fn clear(&mut self) {
         self.threads.clear();
         self.order.clear();
+        self.activity_order.clear();
+        self.next_activity_order = 0;
         self.stopped_threads.clear();
         self.parent_owned_threads.clear();
         self.picker_refresh = None;
@@ -234,6 +252,7 @@ impl AgentNavigationState {
     pub(crate) fn remove(&mut self, thread_id: ThreadId) {
         self.threads.remove(&thread_id);
         self.order.retain(|candidate| *candidate != thread_id);
+        self.activity_order.remove(&thread_id);
         self.stopped_threads.remove(&thread_id);
         self.parent_owned_threads.remove(&thread_id);
     }
@@ -249,7 +268,7 @@ impl AgentNavigationState {
             .any(|thread_id| Some(*thread_id) != primary_thread_id)
     }
 
-    /// Returns live picker rows in the same order users cycle through them.
+    /// Returns tracked rows in the stable order users cycle through them.
     ///
     /// The `order` vector is intentionally historical and may briefly contain thread ids that no
     /// longer have cached metadata, so this filters through the map instead of assuming both
@@ -259,6 +278,27 @@ impl AgentNavigationState {
             .iter()
             .filter_map(|thread_id| self.threads.get(thread_id).map(|entry| (*thread_id, entry)))
             .collect()
+    }
+
+    /// Returns picker rows with the primary thread first and subagents ordered by recent activity.
+    ///
+    /// Equal recency retains stable spawn order. Creation records initial activity, so quiet agents
+    /// naturally fall back to most-recently-created ordering.
+    pub(crate) fn recently_active_threads(
+        &self,
+        primary_thread_id: Option<ThreadId>,
+    ) -> Vec<(ThreadId, &AgentPickerThreadEntry)> {
+        let mut threads = self.ordered_threads();
+        threads.sort_by(|(left_thread_id, _), (right_thread_id, _)| {
+            let left_is_primary = Some(*left_thread_id) == primary_thread_id;
+            let right_is_primary = Some(*right_thread_id) == primary_thread_id;
+            right_is_primary.cmp(&left_is_primary).then_with(|| {
+                self.activity_order
+                    .get(right_thread_id)
+                    .cmp(&self.activity_order.get(left_thread_id))
+            })
+        });
+        threads
     }
 
     pub(crate) fn ordered_path_backed_subagent_threads(
@@ -277,7 +317,23 @@ impl AgentNavigationState {
             .collect()
     }
 
-    /// Returns tracked thread ids in the same stable order used by the picker.
+    pub(crate) fn recently_active_path_backed_subagent_threads(
+        &self,
+        primary_thread_id: Option<ThreadId>,
+    ) -> Vec<(ThreadId, &AgentPickerThreadEntry)> {
+        self.recently_active_threads(primary_thread_id)
+            .into_iter()
+            .filter(|(thread_id, entry)| {
+                Some(*thread_id) != primary_thread_id
+                    && entry
+                        .agent_path
+                        .as_deref()
+                        .is_some_and(|agent_path| !agent_path.trim().is_empty())
+            })
+            .collect()
+    }
+
+    /// Returns tracked thread ids in stable keyboard traversal order.
     pub(crate) fn tracked_thread_ids(&self) -> Vec<ThreadId> {
         self.ordered_threads()
             .into_iter()
@@ -318,24 +374,24 @@ impl AgentNavigationState {
         Some(ordered_threads[next_idx].0)
     }
 
-    /// Derives the contextual footer label for the currently displayed thread.
+    /// Derives the contextual footer label for the currently displayed thread and live agents.
     ///
     /// This intentionally returns `None` until there is more than one tracked thread so
-    /// single-thread sessions do not waste footer space restating the obvious. When metadata for
-    /// the displayed thread is missing, the label falls back to the same generic naming rules used
-    /// by the picker.
+    /// single-thread sessions do not waste footer space restating the obvious. A running-agent
+    /// count remains visible even when metadata for the displayed thread is unavailable. Otherwise,
+    /// missing metadata falls back to the same generic naming rules used by the picker.
     pub(crate) fn active_agent_label(
         &self,
         current_displayed_thread_id: Option<ThreadId>,
         primary_thread_id: Option<ThreadId>,
+        running_subagent_count: usize,
     ) -> Option<String> {
-        if self.threads.len() <= 1 {
+        if self.threads.len() <= 1 && running_subagent_count == 0 {
             return None;
         }
 
-        let thread_id = current_displayed_thread_id?;
-        let is_primary = primary_thread_id == Some(thread_id);
-        Some(
+        let active_agent_label = current_displayed_thread_id.map(|thread_id| {
+            let is_primary = primary_thread_id == Some(thread_id);
             self.threads
                 .get(&thread_id)
                 .map(|entry| {
@@ -357,8 +413,21 @@ impl AgentNavigationState {
                     format_agent_picker_item_name(
                         /*agent_nickname*/ None, /*agent_role*/ None, is_primary,
                     )
-                }),
-        )
+                })
+        });
+        let running_label = match running_subagent_count {
+            0 => None,
+            1 => Some("1 subagent running".to_string()),
+            count => Some(format!("{count} subagents running")),
+        };
+        match (active_agent_label, running_label) {
+            (Some(active_agent_label), Some(running_label)) => {
+                Some(format!("{active_agent_label} · {running_label}"))
+            }
+            (Some(active_agent_label), None) => Some(active_agent_label),
+            (None, Some(running_label)) => Some(running_label),
+            (None, None) => None,
+        }
     }
 
     /// Builds the `/subagents` picker subtitle from the same canonical bindings used by key handling.
@@ -441,6 +510,35 @@ mod tests {
     }
 
     #[test]
+    fn picker_orders_subagents_by_recent_activity_without_changing_traversal_order() {
+        let (mut state, main_thread_id, first_agent_id, second_agent_id) = populated_state();
+
+        assert_eq!(
+            state
+                .recently_active_threads(Some(main_thread_id))
+                .into_iter()
+                .map(|(thread_id, _)| thread_id)
+                .collect::<Vec<_>>(),
+            vec![main_thread_id, second_agent_id, first_agent_id]
+        );
+
+        state.record_activity(first_agent_id);
+
+        assert_eq!(
+            state
+                .recently_active_threads(Some(main_thread_id))
+                .into_iter()
+                .map(|(thread_id, _)| thread_id)
+                .collect::<Vec<_>>(),
+            vec![main_thread_id, first_agent_id, second_agent_id]
+        );
+        assert_eq!(
+            state.ordered_thread_ids(),
+            vec![main_thread_id, first_agent_id, second_agent_id]
+        );
+    }
+
+    #[test]
     fn parent_owned_state_is_removed_with_thread_metadata() {
         let (mut state, _main_thread_id, first_agent_id, second_agent_id) = populated_state();
 
@@ -505,11 +603,35 @@ mod tests {
         let (state, main_thread_id, first_agent_id, _) = populated_state();
 
         assert_eq!(
-            state.active_agent_label(Some(first_agent_id), Some(main_thread_id)),
+            state.active_agent_label(
+                Some(first_agent_id),
+                Some(main_thread_id),
+                /*running_subagent_count*/ 0,
+            ),
             Some("Robie [explorer]".to_string())
         );
         assert_eq!(
-            state.active_agent_label(Some(main_thread_id), Some(main_thread_id)),
+            state.active_agent_label(
+                Some(main_thread_id),
+                Some(main_thread_id),
+                /*running_subagent_count*/ 2,
+            ),
+            Some("Main [default] · 2 subagents running".to_string())
+        );
+        assert_eq!(
+            state.active_agent_label(
+                /*current_displayed_thread_id*/ None,
+                Some(main_thread_id),
+                /*running_subagent_count*/ 1,
+            ),
+            Some("1 subagent running".to_string())
+        );
+        assert_eq!(
+            state.active_agent_label(
+                Some(main_thread_id),
+                Some(main_thread_id),
+                /*running_subagent_count*/ 0,
+            ),
             Some("Main [default]".to_string())
         );
     }

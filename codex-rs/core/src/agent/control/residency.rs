@@ -1,7 +1,6 @@
 use super::AgentControl;
 use crate::agent::AgentStatus;
 use crate::codex_thread::CodexThread;
-use crate::config::Config;
 use crate::thread_manager::ThreadManagerState;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
@@ -49,12 +48,9 @@ impl AgentControl {
     pub(super) async fn reserve_v2_residency_slot(
         &self,
         state: &Arc<ThreadManagerState>,
-        config: &Config,
         protected_thread_id: Option<ThreadId>,
     ) -> CodexResult<V2ResidencySlot> {
-        let capacity = config
-            .effective_agent_max_threads(MultiAgentVersion::V2)
-            .unwrap_or(usize::MAX);
+        let capacity = self.max_subagent_threads();
         Arc::clone(&self.v2_residency)
             .reserve_slot(state, capacity, protected_thread_id)
             .await

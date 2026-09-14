@@ -3,7 +3,6 @@ use super::*;
 use chrono::DateTime;
 #[cfg(test)]
 use chrono::Utc;
-use codex_protocol::config_types::MultiAgentMode;
 
 #[cfg(test)]
 pub(crate) async fn read_summary_from_rollout(
@@ -190,7 +189,8 @@ pub(crate) fn thread_settings_from_config_snapshot(
         effort: config_snapshot.reasoning_effort.clone(),
         summary: config_snapshot.reasoning_summary,
         collaboration_mode: config_snapshot.collaboration_mode.clone(),
-        multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
+        multi_agent_mode: config_snapshot.multi_agent_mode.clone(),
+        multi_agent_max_concurrent_threads: config_snapshot.multi_agent_max_concurrent_threads,
         personality: config_snapshot.personality,
     }
 }

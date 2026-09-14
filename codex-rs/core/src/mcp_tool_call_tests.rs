@@ -2999,7 +2999,7 @@ async fn strict_auto_review_forces_guardian_for_mcp_policy_skip() {
         panic!("guardian-denied MCP approval should carry a rejection message");
     };
     assert!(message.contains("Reason: The tool call would expose private calendar data"));
-    assert!(message.contains("policy circumvention"));
+    assert!(message.contains("circumvention would bypass the denial"));
     assert_eq!(
         guardian_request_log.single_request().path(),
         "/v1/responses"

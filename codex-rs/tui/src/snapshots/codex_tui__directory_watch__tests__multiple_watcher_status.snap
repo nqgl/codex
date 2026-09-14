@@ -1,0 +1,7 @@
+---
+source: tui/src/directory_watch_tests.rs
+expression: "format!(\"{message}\\n{}\", hint.expect(\"status hint\"))"
+---
+2 directory watchers are running.
+- Watching /workspace/notes: Monitoring newly added tags or files whose headers contain @codex#watch and Git commits whose added lines contain @codex recursively. Watcher notifications are trusted. Changes notify Codex; use /watch stop to stop.
+- Watching /workspace/releases: Monitoring only Git commits whose added lines contain @release recursively. Native file notifications were unavailable, so changes are checked every 2 seconds. Changes notify Codex; use /watch stop to stop.

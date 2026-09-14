@@ -153,6 +153,7 @@ use codex_models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::models::PermissionProfile;
@@ -216,6 +217,7 @@ mod backend_banner_fallback;
 mod background_requests;
 mod config_persistence;
 mod connector_mentions;
+mod directory_watch;
 mod event_dispatch;
 mod exit_summary;
 mod experimental_features;
@@ -225,8 +227,10 @@ mod history_ui;
 mod input;
 mod loaded_threads;
 mod managed_worktree_creation;
+mod math_viewport_reflow;
 mod misalignment_policy;
 mod model_defaults;
+mod monitor;
 mod new_session;
 pub(crate) use new_session::has_launch_setting;
 mod pending_interactive_replay;
@@ -566,6 +570,8 @@ pub(crate) struct App {
     pending_server_profiles: HashMap<ThreadId, PermissionProfileSelection>,
 
     pub(crate) file_search: FileSearchManager,
+    directory_watches: Vec<crate::directory_watch::DirectoryWatchHandle>,
+    monitors: Vec<crate::monitor::MonitorHandle>,
 
     pub(crate) transcript_cells: Vec<Arc<dyn HistoryCell>>,
     last_rendered_history_tail: Option<history_ui::RenderedHistoryTail>,
@@ -631,6 +637,9 @@ pub(crate) struct App {
     thread_event_listener_tasks: HashMap<ThreadId, JoinHandle<()>>,
     agent_navigation: AgentNavigationState,
     agents_overview: agents_overview::AgentsOverviewState,
+    /// Whether background inter-agent message routes are mirrored into the visible transcript.
+    /// This is intentionally session-only and never written to config.
+    agent_message_feed_enabled: bool,
     side_threads: HashMap<ThreadId, SideThreadState>,
     abandoned_side_threads: HashSet<ThreadId>,
     active_thread_id: Option<ThreadId>,
@@ -1027,6 +1036,10 @@ impl App {
         if !dashboard_visible && (dashboard_was_visible || restoring_inline_viewport) {
             self.schedule_immediate_resize_reflow(tui);
             self.maybe_run_resize_reflow(tui, screen_size)?;
+        }
+        if !dashboard_visible && crate::math_render::has_images() {
+            let height = self.with_chat_widget_frame(screen_size.width, |height, _| height);
+            self.reflow_math_for_viewport_height(tui, screen_size, height)?;
         }
         self.with_chat_widget_frame(screen_size.width, |desired_height, chat_widget| {
             let desired_height = if dashboard_visible {

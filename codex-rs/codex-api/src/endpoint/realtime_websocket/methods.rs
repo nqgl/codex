@@ -308,6 +308,16 @@ impl RealtimeWebsocketConnection {
 }
 
 impl RealtimeWebsocketWriter {
+    pub async fn commit_audio(&self) -> Result<(), ApiError> {
+        if self.event_parser != RealtimeEventParser::RealtimeV2 {
+            return Err(ApiError::Stream(
+                "audio commit requires Realtime V2".to_string(),
+            ));
+        }
+        self.send_json(&RealtimeOutboundMessage::InputAudioBufferCommit)
+            .await
+    }
+
     pub fn with_context_append_channel(mut self, channel: RealtimeContextAppendChannel) -> Self {
         self.context_append_channel = Some(channel);
         self
@@ -1090,7 +1100,7 @@ fn websocket_url_from_api_url(
     query_params: Option<&HashMap<String, String>>,
     model: Option<&str>,
     event_parser: RealtimeEventParser,
-    _session_mode: RealtimeSessionMode,
+    session_mode: RealtimeSessionMode,
 ) -> Result<Url, ApiError> {
     let mut url = Url::parse(api_url)
         .map_err(|err| ApiError::Stream(format!("failed to parse realtime api_url: {err}")))?;
@@ -1110,11 +1120,19 @@ fn websocket_url_from_api_url(
         }
     }
 
-    let intent = websocket_intent(event_parser);
+    let dedicated_transcription = event_parser == RealtimeEventParser::RealtimeV2
+        && session_mode == RealtimeSessionMode::Transcription;
+    let intent = if dedicated_transcription {
+        Some("transcription")
+    } else {
+        websocket_intent(event_parser)
+    };
+    let model = if dedicated_transcription { None } else { model };
+    let suppress_configured_model = dedicated_transcription || model.is_some();
     let has_extra_query_params = query_params.is_some_and(|query_params| {
         query_params
             .iter()
-            .any(|(key, _)| key != "intent" && !(key == "model" && model.is_some()))
+            .any(|(key, _)| key != "intent" && !(key == "model" && suppress_configured_model))
     });
     if intent.is_some() || model.is_some() || has_extra_query_params {
         let mut query = url.query_pairs_mut();
@@ -1126,7 +1144,7 @@ fn websocket_url_from_api_url(
         }
         if let Some(query_params) = query_params {
             for (key, value) in query_params {
-                if key == "intent" || (key == "model" && model.is_some()) {
+                if key == "intent" || (key == "model" && suppress_configured_model) {
                     continue;
                 }
                 query.append_pair(key, value);
@@ -2108,16 +2126,22 @@ mod tests {
     }
 
     #[test]
-    fn websocket_url_omits_intent_for_realtime_v2_transcription_mode() {
+    fn websocket_url_uses_transcription_intent_and_omits_model_for_realtime_v2() {
         let url = websocket_url_from_api_url(
-            "https://example.com",
-            /*query_params*/ None,
-            /*model*/ None,
+            "https://example.com/v1/realtime?foo=bar",
+            Some(&HashMap::from([
+                ("trace".to_string(), "1".to_string()),
+                ("model".to_string(), "configured-model".to_string()),
+            ])),
+            Some("realtime-snapshot"),
             RealtimeEventParser::RealtimeV2,
             RealtimeSessionMode::Transcription,
         )
         .expect("build ws url");
-        assert_eq!(url.as_str(), "wss://example.com/v1/realtime");
+        assert_eq!(
+            url.as_str(),
+            "wss://example.com/v1/realtime?foo=bar&intent=transcription&trace=1"
+        );
     }
 
     #[test]
@@ -2796,8 +2820,13 @@ mod tests {
             assert_eq!(
                 first_json["session"]["audio"]["input"]["transcription"],
                 json!({
-                    "model": "gpt-4o-mini-transcribe",
+                    "model": "gpt-live-transcribe",
+                    "delay": "medium",
                 })
+            );
+            assert_eq!(
+                first_json["session"]["audio"]["input"]["turn_detection"],
+                Value::Null
             );
             assert!(first_json["session"]["audio"].get("output").is_none());
             assert!(first_json["session"].get("tools").is_none());
@@ -2822,6 +2851,17 @@ mod tests {
                 .expect("text");
             let second_json: Value = serde_json::from_str(&second).expect("json");
             assert_eq!(second_json["type"], "input_audio_buffer.append");
+            let third = ws
+                .next()
+                .await
+                .expect("commit")
+                .expect("commit ok")
+                .into_text()
+                .expect("text");
+            assert_eq!(
+                serde_json::from_str::<Value>(&third).expect("json"),
+                json!({"type": "input_audio_buffer.commit"})
+            );
         });
 
         let provider = Provider {
@@ -2882,6 +2922,11 @@ mod tests {
             .await
             .expect("send audio");
 
+        connection
+            .writer()
+            .commit_audio()
+            .await
+            .expect("commit audio");
         connection.close().await.expect("close");
         server.await.expect("server task");
     }

@@ -1,5 +1,5 @@
 use super::analytics::ToolCallAnalytics;
-use super::message_tool::MessageDeliveryMode;
+use super::message_tool::MessageToolKind;
 use super::message_tool::SendMessageArgs;
 use super::message_tool::handle_message_string_tool;
 use super::*;
@@ -40,7 +40,7 @@ impl Handler {
         let args: SendMessageArgs = parse_arguments(&arguments)?;
         handle_message_string_tool(
             invocation,
-            MessageDeliveryMode::QueueOnly,
+            MessageToolKind::Message,
             args.target,
             args.message,
             analytics,

@@ -465,7 +465,7 @@ impl ChatComposer {
     /// terminal backends do not receive an off-screen cursor position.
     pub(super) fn history_search_cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
         self.history_search.as_ref()?;
-        let [_, _, _, popup_rect] = self.layout_areas(area);
+        let [_, _, _, _, popup_rect] = self.layout_areas(area);
         if popup_rect.is_empty() {
             return None;
         }
@@ -970,7 +970,7 @@ mod tests {
         }
 
         let area = Rect::new(0, 0, 60, 8);
-        let [_, _, textarea_rect, _] = composer.layout_areas(area);
+        let [_, _, _, textarea_rect, _] = composer.layout_areas(area);
         let mut buf = Buffer::empty(area);
         composer.render(area, &mut buf);
         let x = textarea_rect.x;
@@ -989,7 +989,7 @@ mod tests {
         );
 
         let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        let [_, _, accepted_textarea_rect, _] = composer.layout_areas(area);
+        let [_, _, _, accepted_textarea_rect, _] = composer.layout_areas(area);
         let mut accepted_buf = Buffer::empty(area);
         composer.render(area, &mut accepted_buf);
         for offset in 0..3 {

@@ -7,6 +7,7 @@ use codex_app_server_protocol::FileChangeApprovalDecision;
 use codex_app_server_protocol::McpServerElicitationAction;
 use codex_app_server_protocol::RequestId as AppServerRequestId;
 use codex_app_server_protocol::ReviewTarget;
+use codex_app_server_protocol::ThreadRealtimeAudioChunk;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_app_server_protocol::UserInput;
 use codex_app_server_protocol::UserVerificationProof;
@@ -100,6 +101,10 @@ impl Serialize for RealtimeSpeechText {
 pub(crate) enum AppCommand {
     Interrupt,
     CleanBackgroundTerminals,
+    DictationStart,
+    DictationAudio(ThreadRealtimeAudioChunk),
+    DictationCommit,
+    DictationClose,
     RealtimeConversationStart {
         thread_id: ThreadId,
         offer_sdp: RealtimeOfferSdp,
@@ -210,6 +215,18 @@ impl AppCommand {
 
     pub(crate) fn clean_background_terminals() -> Self {
         Self::CleanBackgroundTerminals
+    }
+
+    pub(crate) fn dictation_start() -> Self {
+        Self::DictationStart
+    }
+
+    pub(crate) fn dictation_audio(frame: ThreadRealtimeAudioChunk) -> Self {
+        Self::DictationAudio(frame)
+    }
+
+    pub(crate) fn dictation_close() -> Self {
+        Self::DictationClose
     }
 
     pub(crate) fn run_user_shell_command(command: String) -> Self {

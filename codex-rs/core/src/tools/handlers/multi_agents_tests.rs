@@ -1067,7 +1067,7 @@ async fn multi_agent_v2_spawn_returns_path_and_send_message_accepts_relative_pat
                         && communication.other_recipients.is_empty()
                         && communication.content.is_empty()
                         && communication.encrypted_content.as_deref() == Some("encrypted-send-message")
-                        && !communication.trigger_turn
+                        && communication.trigger_turn
             )
     }));
 }
@@ -1193,7 +1193,7 @@ async fn multi_agent_v2_spawn_rejects_zero_fork_turns() {
 }
 
 #[tokio::test]
-async fn multi_agent_v2_send_message_accepts_root_target_from_child() {
+async fn multi_agent_v2_send_message_to_parent_triggers_turn() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let mut config = (*turn.config).clone();
@@ -1263,7 +1263,7 @@ async fn multi_agent_v2_send_message_accepts_root_target_from_child() {
                         && communication.other_recipients.is_empty()
                         && communication.content.is_empty()
                         && communication.encrypted_content.as_deref() == Some("encrypted-done")
-                        && !communication.trigger_turn
+                        && communication.trigger_turn
             )
     }));
 }
@@ -1909,7 +1909,7 @@ async fn multi_agent_v2_followup_task_completion_notifies_parent_on_every_turn()
                                 if communication.author == worker_path
                                     && communication.recipient == AgentPath::root()
                                     && communication.other_recipients.is_empty()
-                                    && !communication.trigger_turn =>
+                                    && communication.trigger_turn =>
                             {
                                 Some(communication.content)
                             }

@@ -15494,6 +15494,7 @@
           {
             "enum": [
               "explicitRequestOnly",
+              "balanced",
               "proactive"
             ],
             "type": "string"
@@ -17809,6 +17810,13 @@
         "enum": [
           "text",
           "audio"
+        ],
+        "type": "string"
+      },
+      "RealtimeSessionType": {
+        "enum": [
+          "conversational",
+          "transcription"
         ],
         "type": "string"
       },

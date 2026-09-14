@@ -31,6 +31,11 @@ impl App {
         scrollback_reflow: ConsolidationScrollbackReflow,
         deferred_history_cell: Option<Box<dyn HistoryCell>>,
     ) -> Result<()> {
+        let scrollback_reflow = if crate::math_render::has_math(&source) {
+            ConsolidationScrollbackReflow::Required
+        } else {
+            scrollback_reflow
+        };
         // Some finalize paths must preserve a last provisional stream cell long
         // enough for queue ordering, then fold it into the canonical
         // source-backed cell during consolidation.

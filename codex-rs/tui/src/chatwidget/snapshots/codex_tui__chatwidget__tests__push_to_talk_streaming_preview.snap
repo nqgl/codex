@@ -1,0 +1,11 @@
+---
+source: tui/src/chatwidget/tests/dictation.rs
+expression: normalized_backend_snapshot(terminal.backend())
+---
+"                                                                                "
+"                                                                                "
+"  final words still changing                                                    "
+"                                                                                "
+"› Ask Codex to do anything                                                      "
+"                                                                                "
+"   Space listening · release to insert                                          "

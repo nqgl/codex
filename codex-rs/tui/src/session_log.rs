@@ -230,7 +230,7 @@ fn log_inbound_app_event_with(logger: &SessionLogger, event: &AppEvent) {
 }
 
 pub(crate) fn log_outbound_op(op: &AppCommand) {
-    if !LOGGER.is_enabled() {
+    if !LOGGER.is_enabled() || matches!(op, AppCommand::DictationAudio(_)) {
         return;
     }
     write_record("from_tui", "op", op);

@@ -14,7 +14,6 @@ use std::time::Duration;
 
 use notify::Event;
 use notify::EventKind;
-use notify::RecommendedWatcher;
 use notify::RecursiveMode;
 use notify::Watcher;
 use tokio::runtime::Handle;
@@ -217,7 +216,7 @@ impl PathWatchCounts {
 }
 
 struct FileWatcherInner {
-    watcher: RecommendedWatcher,
+    watcher: Box<dyn Watcher + Send>,
     watched_paths: HashMap<PathBuf, RecursiveMode>,
 }
 
@@ -378,12 +377,32 @@ impl FileWatcher {
     /// on the current Tokio runtime.
     pub fn new() -> notify::Result<Self> {
         let (raw_tx, raw_rx) = mpsc::unbounded_channel();
-        let raw_tx_clone = raw_tx;
         let watcher = notify::recommended_watcher(move |res| {
-            let _ = raw_tx_clone.send(res);
+            let _ = raw_tx.send(res);
         })?;
+        Ok(Self::with_watcher(watcher, raw_rx))
+    }
+
+    /// Creates a polling filesystem watcher and starts its background event
+    /// loop on the current Tokio runtime.
+    pub fn new_polling(interval: Duration) -> notify::Result<Self> {
+        let (raw_tx, raw_rx) = mpsc::unbounded_channel();
+        let config = notify::Config::default().with_poll_interval(interval);
+        let watcher = notify::PollWatcher::new(
+            move |res| {
+                let _ = raw_tx.send(res);
+            },
+            config,
+        )?;
+        Ok(Self::with_watcher(watcher, raw_rx))
+    }
+
+    fn with_watcher(
+        watcher: impl Watcher + Send + 'static,
+        raw_rx: mpsc::UnboundedReceiver<notify::Result<Event>>,
+    ) -> Self {
         let inner = FileWatcherInner {
-            watcher,
+            watcher: Box::new(watcher),
             watched_paths: HashMap::new(),
         };
         let state = Arc::new(RwLock::new(WatchState::default()));
@@ -392,7 +411,7 @@ impl FileWatcher {
             state,
         };
         file_watcher.spawn_event_loop(raw_rx);
-        Ok(file_watcher)
+        file_watcher
     }
 
     /// Creates an inert watcher that only supports test-driven synthetic

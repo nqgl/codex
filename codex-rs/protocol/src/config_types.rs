@@ -345,6 +345,7 @@ pub enum MultiAgentMode {
     Custom(String),
     #[default]
     ExplicitRequestOnly,
+    Balanced,
     Proactive,
 }
 
@@ -354,6 +355,7 @@ enum MultiAgentModeWire {
     None,
     Custom(String),
     ExplicitRequestOnly,
+    Balanced,
     Proactive,
 }
 
@@ -363,6 +365,7 @@ impl From<MultiAgentModeWire> for MultiAgentMode {
             MultiAgentModeWire::None => Self::Custom(String::new()),
             MultiAgentModeWire::Custom(hint_text) => Self::Custom(hint_text),
             MultiAgentModeWire::ExplicitRequestOnly => Self::ExplicitRequestOnly,
+            MultiAgentModeWire::Balanced => Self::Balanced,
             MultiAgentModeWire::Proactive => Self::Proactive,
         }
     }

@@ -13,6 +13,7 @@ pub(super) struct MarkdownRenderCache {
 pub(super) struct MarkdownRenderCacheKey {
     pub(super) width: u16,
     pub(super) syntax_theme_revision: u64,
+    pub(super) math_revision: u64,
     pub(super) terminal_fg: Option<(u8, u8, u8)>,
     pub(super) terminal_bg: Option<(u8, u8, u8)>,
     pub(super) color_level: crate::terminal_palette::StdoutColorLevel,
@@ -31,6 +32,7 @@ impl MarkdownRenderCache {
         let key = MarkdownRenderCacheKey {
             width,
             syntax_theme_revision: crate::render::highlight::syntax_theme_revision(),
+            math_revision: crate::math_render::revision(),
             terminal_fg: crate::terminal_palette::default_fg(),
             terminal_bg: crate::terminal_palette::default_bg(),
             color_level: crate::terminal_palette::stdout_color_level(),

@@ -274,6 +274,8 @@ impl App {
     }
 
     fn clear_terminal_for_resize_replay(&mut self, tui: &mut tui::Tui) -> Result<()> {
+        tui.begin_history_replay()?;
+        crate::math_render::invalidate_images();
         if tui.is_alt_screen_active() {
             tui.terminal.clear_visible_screen()?;
         } else {

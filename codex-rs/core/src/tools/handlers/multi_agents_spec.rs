@@ -168,7 +168,7 @@ pub fn create_send_input_tool_v1() -> ToolSpec {
         description: MULTI_AGENT_V1_NAMESPACE_DESCRIPTION.to_string(),
         tools: vec![ResponsesApiNamespaceTool::Function(ResponsesApiTool {
             name: "send_input".to_string(),
-            description: "Send a message to an existing agent. Use interrupt=true to redirect work immediately. You should reuse the agent by send_input if you believe your assigned task is highly dependent on the context of a previous task."
+            description: "Send a message to an existing agent. Use interrupt=true to redirect work immediately. Reusing an agent via send_input works well when the new task depends heavily on context that agent already holds."
                 .to_string(),
             strict: false,
             defer_loading: None,
@@ -189,7 +189,7 @@ pub fn create_send_message_tool() -> ToolSpec {
         (
             "message".to_string(),
             JsonSchema::string(Some(
-                "Message text to queue on the target agent.".to_string(),
+                "Message text to send to the target agent.".to_string(),
             ))
             .with_encrypted(),
         ),
@@ -197,8 +197,7 @@ pub fn create_send_message_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "send_message".to_string(),
-        description: "Send a message to an existing agent. The message will be delivered promptly. Does not trigger a new turn."
-            .to_string(),
+        description: "Send a message to an existing agent and wake it if idle.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::object(
@@ -691,15 +690,15 @@ fn spawn_agent_tool_description(
     }
     let agent_role_usage_hint = available_models_description
         .map(|_| {
-            "Agent-role guidance below only helps choose which agent to use after spawning is already authorized; it never authorizes spawning by itself."
+            "The agent-role guidance below is for choosing which agent to use once spawning is appropriate; whether to spawn at all is decided separately by the session's delegation settings."
         })
         .unwrap_or_default();
     format!(
         r#"
         {tool_description}
-This spawn_agent tool provides you access to sub-agents that inherit your current model by default. Do not set the `model` field unless the user explicitly asks for a different model. You should follow the rules and guidelines below to use this tool.
+This spawn_agent tool provides you access to sub-agents that inherit your current model by default. Do not set the `model` field unless the user explicitly asks for a different model or there is a clear task-specific reason. You should follow the rules and guidelines below to use this tool.
 
-Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.
+Multi-agent delegation is now by explicit request: spawn sub-agents when the user, applicable AGENTS.md, or skill instructions ask for delegation or parallel agent work.
 Requests for depth, thoroughness, research, investigation, or detailed codebase analysis do not count as permission to spawn.
 {agent_role_usage_hint}
 

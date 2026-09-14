@@ -113,6 +113,7 @@
         {
           "enum": [
             "explicitRequestOnly",
+            "balanced",
             "proactive"
           ],
           "type": "string"

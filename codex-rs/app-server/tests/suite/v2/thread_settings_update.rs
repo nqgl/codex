@@ -4,6 +4,7 @@ use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
+use app_test_support::write_mock_responses_config_toml;
 use app_test_support::write_models_cache;
 use codex_app_server_protocol::ApprovalsReviewer;
 use codex_app_server_protocol::AskForApproval;
@@ -32,8 +33,10 @@ use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_core::test_support::all_model_presets;
+use codex_features::Feature;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::Settings;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -42,6 +45,7 @@ use core_test_support::responses;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use tempfile::TempDir;
 use test_case::test_case;
@@ -701,4 +705,74 @@ fn create_config_toml(codex_home: &std::path::Path, server_uri: &str) -> std::io
         .with_root_config("compact_prompt = \"compact\"\nmodel_auto_compact_token_limit = 200000")
         .with_provider_config("supports_websockets = false")
         .write(codex_home)
+}
+
+#[tokio::test]
+async fn thread_settings_update_changes_multi_agent_mode_for_future_turns() -> Result<()> {
+    let server = responses::start_mock_server().await;
+    let body = responses::sse(vec![
+        responses::ev_response_created("resp-1"),
+        responses::ev_assistant_message("msg-1", "done"),
+        responses::ev_completed("resp-1"),
+    ]);
+    let response_mock = responses::mount_sse_once(&server, body).await;
+    let codex_home = TempDir::new()?;
+    write_mock_responses_config_toml(
+        codex_home.path(),
+        &server.uri(),
+        &BTreeMap::from([(Feature::MultiAgentV2, true)]),
+        /*auto_compact_limit*/ 200_000,
+        /*requires_openai_auth*/ None,
+        "mock_provider",
+        "compact",
+    )?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build()
+        .await?;
+    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
+    let thread = start_thread(&mut mcp).await?.thread;
+
+    send_thread_settings_update(
+        &mut mcp,
+        ThreadSettingsUpdateParams {
+            thread_id: thread.id.clone(),
+            multi_agent_mode: Some(MultiAgentMode::Proactive),
+            multi_agent_max_concurrent_threads: Some(2),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut mcp).await?;
+    assert_eq!(
+        updated.thread_settings.multi_agent_mode,
+        MultiAgentMode::Proactive
+    );
+    assert_eq!(
+        updated.thread_settings.multi_agent_max_concurrent_threads,
+        2
+    );
+    start_text_turn(&mut mcp, thread.id).await?;
+
+    timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+    let developer_texts = response_mock
+        .single_request()
+        .message_input_texts("developer");
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| { text.contains("Proactive multi-agent delegation is active") })
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("There are 2 available concurrency slots"))
+    );
+
+    Ok(())
 }

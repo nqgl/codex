@@ -58,3 +58,22 @@ fn execution_guards_ignore_root_and_v1_turns() {
             .is_none()
     );
 }
+
+#[test]
+fn execution_limit_can_be_changed_after_initialization() {
+    let control = control_with_limit(/*max_threads*/ 3);
+    control.set_max_concurrent_threads(/*max_threads*/ 2);
+    let source = SessionSource::SubAgent(SubAgentSource::Other("worker".to_string()));
+    let first = control
+        .execution_guard(MultiAgentVersion::V2, &source)
+        .expect("v2 subagent execution should be counted");
+
+    let Err(err) = control.ensure_execution_capacity(MultiAgentVersion::V2, &source) else {
+        panic!("updated limit should apply to existing agent control handles");
+    };
+    let CodexErrorDetails::AgentLimitReached { max_threads } = err.details() else {
+        panic!("expected AgentLimitReached");
+    };
+    assert_eq!(*max_threads, 1);
+    drop(first);
+}

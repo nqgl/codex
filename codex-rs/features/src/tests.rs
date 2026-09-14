@@ -712,6 +712,7 @@ root_agent_usage_hint_text = "Root guidance."
 subagent_usage_hint_text = "Subagent guidance."
 subagent_developer_instructions = "Delegate carefully."
 multi_agent_mode_hint_text = "Custom mode guidance."
+mode = "proactive"
 tool_namespace = "agents"
 hide_spawn_agent_metadata = true
 expose_spawn_agent_model_overrides = true
@@ -739,6 +740,7 @@ non_code_mode_only = true
             subagent_usage_hint_text: Some("Subagent guidance.".to_string()),
             subagent_developer_instructions: Some("Delegate carefully.".to_string()),
             multi_agent_mode_hint_text: Some("Custom mode guidance.".to_string()),
+            mode: Some(crate::MultiAgentModeConfig::Proactive),
             tool_namespace: Some("agents".to_string()),
             hide_spawn_agent_metadata: Some(true),
             expose_spawn_agent_model_overrides: Some(true),

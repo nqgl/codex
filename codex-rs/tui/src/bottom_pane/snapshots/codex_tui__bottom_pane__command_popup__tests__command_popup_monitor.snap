@@ -1,0 +1,16 @@
+---
+source: tui/src/bottom_pane/command_popup.rs
+assertion_line: 447
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 72, height: 1 },
+    content: [
+        "  /monitor  run a persistent command that notifies Codex on output      ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 0, fg: Cyan, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 66, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

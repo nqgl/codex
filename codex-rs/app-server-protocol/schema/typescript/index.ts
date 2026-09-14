@@ -62,6 +62,7 @@ export type { Personality } from "./Personality";
 export type { PlanType } from "./PlanType";
 export type { RealtimeConversationVersion } from "./RealtimeConversationVersion";
 export type { RealtimeOutputModality } from "./RealtimeOutputModality";
+export type { RealtimeSessionType } from "./RealtimeSessionType";
 export type { RealtimeVoice } from "./RealtimeVoice";
 export type { RealtimeVoicesList } from "./RealtimeVoicesList";
 export type { ReasoningEffort } from "./ReasoningEffort";

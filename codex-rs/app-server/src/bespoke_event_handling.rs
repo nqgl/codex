@@ -429,6 +429,17 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
         }
         EventMsg::SafetyBuffering(event) => {
+            tracing::info!(
+                target: "codex_app_server::safety_buffering",
+                thread_id = %conversation_id,
+                turn_id = %event_turn_id,
+                model = %event.model,
+                show_buffering_ui = event.show_buffering_ui,
+                use_cases = ?event.use_cases,
+                reasons = ?event.reasons,
+                faster_model = ?event.faster_model,
+                "model safety buffering updated"
+            );
             let notification = ModelSafetyBufferingUpdatedNotification {
                 thread_id: conversation_id.to_string(),
                 turn_id: event_turn_id.clone(),

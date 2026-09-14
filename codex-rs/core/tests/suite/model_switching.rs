@@ -579,7 +579,7 @@ async fn settings_update_during_active_turn_applies_to_next_turn_only() -> Resul
                 "approval_policy_never": request
                     .message_input_texts("developer")
                     .iter()
-                    .any(|text| text.contains("Approval policy is currently never")),
+                    .any(|text| text.contains("Approval policy is currently `never`")),
             })
         })
         .collect::<Vec<_>>();

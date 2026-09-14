@@ -37,6 +37,7 @@ fn thread_settings_for_test(
                 },
             },
             multi_agent_mode: Default::default(),
+            multi_agent_max_concurrent_threads: 4,
             personality: Some(Personality::Pragmatic),
         },
     }
@@ -526,8 +527,13 @@ async fn thread_settings_updated_updates_visible_state_without_transcript() {
     });
     let _ = drain_insert_history(&mut rx);
 
+    let mut notification = thread_settings_for_test("gpt-5.4", thread_id);
+    notification.thread_settings.multi_agent_mode = MultiAgentMode::Balanced;
+    notification
+        .thread_settings
+        .multi_agent_max_concurrent_threads = 6;
     chat.handle_server_notification(
-        ServerNotification::ThreadSettingsUpdated(thread_settings_for_test("gpt-5.4", thread_id)),
+        ServerNotification::ThreadSettingsUpdated(notification),
         /*replay_kind*/ None,
     );
 
@@ -560,6 +566,13 @@ async fn thread_settings_updated_updates_visible_state_without_transcript() {
         codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY
     );
     assert_eq!(chat.config_ref().personality, Some(Personality::Pragmatic));
+    assert_eq!(chat.effective_multi_agent_mode(), MultiAgentMode::Balanced);
+    assert_eq!(
+        chat.config_ref()
+            .multi_agent_v2
+            .max_concurrent_threads_per_session,
+        6
+    );
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
     assert!(
         drain_insert_history(&mut rx).is_empty(),

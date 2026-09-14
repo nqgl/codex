@@ -52,7 +52,7 @@ fn disabled_checklist_preserves_goal_text_that_mentions_the_tool() {
     };
     assert!(text.contains(objective));
     assert!(!text.contains("If update_plan is available"));
-    assert!(text.contains("Completion audit:"));
+    assert!(text.contains("Completion is a claim about the current state"));
 }
 
 fn test_goal(objective: &str) -> ThreadGoal {

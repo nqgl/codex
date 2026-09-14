@@ -70,6 +70,8 @@ pub(super) fn prepare_update(overrides: ThreadSettingsOverrides) -> SessionSetti
         summary,
         service_tier,
         collaboration_mode,
+        multi_agent_mode,
+        multi_agent_max_concurrent_threads,
         personality,
         disabled_plugin_ids,
     } = overrides;
@@ -91,6 +93,8 @@ pub(super) fn prepare_update(overrides: ThreadSettingsOverrides) -> SessionSetti
         permission_profile,
         active_permission_profile,
         windows_sandbox_level,
+        multi_agent_mode,
+        multi_agent_max_concurrent_threads,
         disabled_plugin_ids,
         ..Default::default()
     }

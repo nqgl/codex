@@ -7,6 +7,7 @@ codex_rust_crate(
         "logs_migrations/**",
         "memory_migrations/**",
         "migrations/**",
+        "monitor_migrations/**",
         "queue_migrations/**",
         "thread_history_migrations/**",
     ]),

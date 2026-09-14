@@ -82,6 +82,7 @@ use codex_model_provider_info::WireApi;
 use codex_models_manager::bundled_models_response;
 use codex_network_proxy::NetworkMode;
 use codex_protocol::config_types::ModelProviderAuthInfo;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::ActivePermissionProfile;
@@ -11657,6 +11658,7 @@ root_agent_usage_hint_text = "Root guidance."
 subagent_usage_hint_text = "Subagent guidance."
 subagent_developer_instructions = "  Delegate carefully.  "
 multi_agent_mode_hint_text = "Custom mode guidance."
+mode = "proactive"
 tool_namespace = "agents"
 hide_spawn_agent_metadata = true
 expose_spawn_agent_model_overrides = false
@@ -11709,6 +11711,7 @@ max_concurrent_threads_per_session = 9
         config.multi_agent_v2.multi_agent_mode_hint_text.as_deref(),
         Some("Custom mode guidance.")
     );
+    assert_eq!(config.multi_agent_v2.mode, Some(MultiAgentMode::Proactive));
     assert_eq!(
         config.multi_agent_v2.tool_namespace.as_deref(),
         Some("agents")
@@ -11865,7 +11868,7 @@ fn multi_agent_v2_exposes_model_overrides_by_default() {
             .strip_prefix(hint_without_model_overrides.as_str())
             .expect("model-override guidance should extend the base usage hint");
         for required_fragment in [
-            "Full-history forks",
+            "full-history fork",
             "`fork_turns`",
             "`model`",
             "`reasoning_effort`",
@@ -11933,6 +11936,7 @@ subagent_developer_instructions = "  \t  "
     let expected = MultiAgentV2Config {
         subagent_developer_instructions: Some(String::new()),
         multi_agent_mode_hint_text: Some(String::new()),
+        mode: None,
         ..resolve_multi_agent_v2_config(&ConfigToml::default())
     };
     assert_eq!(resolve_multi_agent_v2_config(&config_toml), expected);

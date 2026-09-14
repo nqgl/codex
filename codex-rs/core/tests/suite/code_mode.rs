@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
+use anyhow::Context;
 use anyhow::Result;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -105,6 +106,7 @@ use image::metadata::Orientation;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::io::Cursor;
 use std::path::Path;
@@ -2812,7 +2814,8 @@ text(JSON.stringify(result));
         "exec clock.curr_time call failed unexpectedly: {output}"
     );
 
-    let parsed: Value = serde_json::from_str(&output)?;
+    let parsed: Value =
+        serde_json::from_str(&output).with_context(|| format!("clock output: {output}"))?;
     let current_time = parsed
         .get("current_time")
         .and_then(Value::as_str)
@@ -4891,7 +4894,7 @@ text("token one token two token three token four token five token six token seve
 
     let second_request = second_completion.single_request();
     let second_items = function_tool_output_items(&second_request, "call-2");
-    assert_eq!(second_items.len(), 2, "wait output: {second_items:?}");
+    assert_eq!(second_items.len(), 3);
     assert_regex_match(
         concat!(
             r"(?s)\A",
@@ -4908,6 +4911,10 @@ Total\ output\ lines:\ 1\n
 \z
 "#;
     assert_regex_match(expected_pattern, text_item(&second_items, /*index*/ 1));
+    assert!(
+        text_item(&second_items, /*index*/ 2)
+            .contains("Truncated output saved as queryable bundle")
+    );
 
     Ok(())
 }
@@ -6583,6 +6590,119 @@ text(`echo=${result.structuredContent.echo}`);
         "exec normalized rmcp tool call failed unexpectedly: {output}"
     );
     assert_eq!(output, "echo=ECHOING: ping");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn code_mode_lists_global_scope_items() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let code = r#"
+text(JSON.stringify(Object.getOwnPropertyNames(globalThis).sort()));
+"#;
+
+    let (_test, second_mock) =
+        run_code_mode_turn_with_rmcp(&server, "use exec to inspect global scope", code).await?;
+
+    let req = second_mock.single_request();
+    let (output, success) = custom_tool_output_body_and_success(&req, "call-1");
+    assert_ne!(
+        success,
+        Some(false),
+        "exec global scope inspection failed unexpectedly: {output}"
+    );
+    let globals = serde_json::from_str::<Vec<String>>(&output)?;
+    let globals = globals.into_iter().collect::<HashSet<_>>();
+    let expected = [
+        "AggregateError",
+        "ALL_TOOLS",
+        "Array",
+        "ArrayBuffer",
+        "AsyncDisposableStack",
+        "BigInt",
+        "BigInt64Array",
+        "BigUint64Array",
+        "Boolean",
+        "clearTimeout",
+        "DataView",
+        "Date",
+        "DisposableStack",
+        "Error",
+        "EvalError",
+        "FinalizationRegistry",
+        "Float16Array",
+        "Float32Array",
+        "Float64Array",
+        "Function",
+        "Infinity",
+        "Int16Array",
+        "Int32Array",
+        "Int8Array",
+        "Intl",
+        "Iterator",
+        "JSON",
+        "Map",
+        "Math",
+        "NaN",
+        "Number",
+        "Object",
+        "Promise",
+        "Proxy",
+        "RangeError",
+        "ReferenceError",
+        "Reflect",
+        "RegExp",
+        "Set",
+        "String",
+        "SuppressedError",
+        "Symbol",
+        "SyntaxError",
+        "Temporal",
+        "TypeError",
+        "URIError",
+        "Uint16Array",
+        "Uint32Array",
+        "Uint8Array",
+        "Uint8ClampedArray",
+        "WeakMap",
+        "WeakRef",
+        "WeakSet",
+        "__codexContentItems",
+        "add_content",
+        "audio",
+        "bundles",
+        "decodeURI",
+        "decodeURIComponent",
+        "encodeURI",
+        "encodeURIComponent",
+        "escape",
+        "exit",
+        "eval",
+        "generatedImage",
+        "globalThis",
+        "image",
+        "isFinite",
+        "isNaN",
+        "load",
+        "notify",
+        "parseFloat",
+        "parseInt",
+        "setTimeout",
+        "store",
+        "text",
+        "tools",
+        "undefined",
+        "unescape",
+        "yield_control",
+    ];
+    for g in &globals {
+        assert!(
+            expected.contains(&g.as_str()),
+            "unexpected global {g} in {globals:?}"
+        );
+    }
 
     Ok(())
 }

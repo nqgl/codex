@@ -958,6 +958,7 @@ async fn global_scope_contains_only_allowed_items() {
         "__codexContentItems",
         "add_content",
         "audio",
+        "bundles",
         "decodeURI",
         "decodeURIComponent",
         "encodeURI",

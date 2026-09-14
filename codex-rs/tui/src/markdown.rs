@@ -98,13 +98,15 @@ pub(crate) fn render_markdown_agent_with_links_cwd_and_visualizations(
         rewritten.trusted_file_links.contains_key(destination)
             || crate::markdown_render::hide_web_link_destination(destination)
     };
-    let mut lines = crate::markdown_render::render_streaming_markdown_lines_with_width_and_cwd(
-        &normalized,
-        width,
-        cwd,
-        &is_hidden_link_destination,
-    )
-    .lines;
+    let mut lines = crate::math_render::render(&normalized, width, |segment| {
+        crate::markdown_render::render_streaming_markdown_lines_with_width_and_cwd(
+            segment,
+            width,
+            cwd,
+            &is_hidden_link_destination,
+        )
+        .lines
+    });
     for hyperlink in lines.iter_mut().flat_map(|line| &mut line.hyperlinks) {
         if let Some(link) = rewritten.trusted_file_links.get(&hyperlink.destination) {
             hyperlink.retarget_to_trusted_file(&link.destination);
@@ -124,6 +126,11 @@ pub(crate) fn render_streaming_markdown_agent_with_links_and_cwd(
     cwd: Option<&Path>,
 ) -> crate::markdown_render::StreamingMarkdownRender {
     let normalized = unwrap_markdown_fences(markdown_source);
+    let normalized = if normalized.contains("\\(") {
+        std::borrow::Cow::Owned(crate::math_render::protect_inline_source(&normalized))
+    } else {
+        normalized
+    };
     let mut rendered = crate::markdown_render::render_streaming_markdown_lines_with_width_and_cwd(
         &normalized,
         width,

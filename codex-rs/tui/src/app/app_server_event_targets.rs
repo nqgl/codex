@@ -270,6 +270,7 @@ mod tests {
                 },
             },
             multi_agent_mode: Default::default(),
+            multi_agent_max_concurrent_threads: 4,
             personality: None,
         }
     }

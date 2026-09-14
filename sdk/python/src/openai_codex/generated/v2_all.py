@@ -2825,6 +2825,7 @@ class ModelVerificationNotification(BaseModel):
 
 class MultiAgentModeValue(Enum):
     explicit_request_only = "explicitRequestOnly"
+    balanced = "balanced"
     proactive = "proactive"
 
 
@@ -3608,6 +3609,11 @@ class RealtimeConversationVersion(Enum):
 class RealtimeOutputModality(Enum):
     text = "text"
     audio = "audio"
+
+
+class RealtimeSessionType(Enum):
+    conversational = "conversational"
+    transcription = "transcription"
 
 
 class RealtimeVoice(Enum):

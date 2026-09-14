@@ -61,6 +61,7 @@ use codex_protocol::protocol::CodexResponseHandoffMode;
 use codex_protocol::protocol::ConversationTextRole;
 use codex_protocol::protocol::RealtimeConversationVersion;
 use codex_protocol::protocol::RealtimeOutputModality;
+use codex_protocol::protocol::RealtimeSessionType;
 use codex_protocol::protocol::RealtimeVoice;
 use codex_protocol::protocol::RealtimeVoicesList;
 use core_test_support::responses;
@@ -391,6 +392,7 @@ impl RealtimeE2eHarness {
                 codex_response_handoff_channel_prefixes: None,
                 codex_responses_as_items,
                 model: None,
+                session_type: None,
                 output_modality: RealtimeOutputModality::Audio,
                 include_startup_context: None,
                 initial_items: None,
@@ -452,6 +454,7 @@ impl RealtimeE2eHarness {
                 codex_response_handoff_channel_prefixes: None,
                 codex_responses_as_items,
                 model: None,
+                session_type: None,
                 output_modality: RealtimeOutputModality::Audio,
                 include_startup_context: None,
                 initial_items: None,
@@ -489,6 +492,7 @@ impl RealtimeE2eHarness {
                 codex_response_handoff_channel_prefixes,
                 codex_responses_as_items: None,
                 model: None,
+                session_type: None,
                 output_modality: RealtimeOutputModality::Audio,
                 include_startup_context: None,
                 initial_items,
@@ -548,6 +552,7 @@ impl RealtimeE2eHarness {
         let request_id = self
             .mcp
             .send_thread_realtime_append_audio_request(ThreadRealtimeAppendAudioParams {
+                commit: false,
                 thread_id,
                 audio: ThreadRealtimeAudioChunk {
                     data: "BQYH".to_string(),
@@ -706,6 +711,7 @@ async fn realtime_conversation_streams_timeline_items() -> Result<()> {
             codex_response_handoff_mode: None,
             codex_response_handoff_channel_prefixes: None,
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: None,
             initial_items: None,
@@ -903,6 +909,7 @@ async fn realtime_conversation_streams_v2_notifications() -> Result<()> {
             codex_response_handoff_channel_prefixes: None,
             thread_id: thread_start.thread.id.clone(),
             model: Some("realtime-treatment-model".to_string()),
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: None,
             initial_items: None,
@@ -954,6 +961,7 @@ async fn realtime_conversation_streams_v2_notifications() -> Result<()> {
 
     let audio_append_request_id = mcp
         .send_thread_realtime_append_audio_request(ThreadRealtimeAppendAudioParams {
+            commit: false,
             thread_id: started.thread_id.clone(),
             audio: ThreadRealtimeAudioChunk {
                 data: "BQYH".to_string(),
@@ -1472,6 +1480,7 @@ async fn realtime_start_can_skip_startup_context() -> Result<()> {
             codex_response_handoff_channel_prefixes: None,
             thread_id: thread_start.thread.id.clone(),
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: Some(false),
             initial_items: None,
@@ -1499,6 +1508,149 @@ async fn realtime_start_can_skip_startup_context() -> Result<()> {
         .context("expected realtime instructions")?;
     assert_eq!(instructions, "backend prompt");
     assert!(!instructions.contains(STARTUP_CONTEXT_HEADER));
+
+    realtime_server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn realtime_start_can_override_session_type_for_transcription() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let responses_server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
+    let realtime_server = start_websocket_server(vec![vec![
+        vec![json!({
+            "type": "session.updated",
+            "session": { "id": "sess_transcription" }
+        })],
+        vec![json!({
+            "type": "conversation.item.input_audio_transcription.delta",
+            "item_id": "dictation", "delta": "hello"
+        })],
+        vec![json!({
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "dictation", "transcript": "Hello from live transcription."
+        })],
+    ]])
+    .await;
+    let codex_home = TempDir::new()?;
+    create_config_toml(
+        codex_home.path(),
+        &responses_server.uri(),
+        realtime_server.uri(),
+        StartupContextConfig::Generated,
+    )?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+    login_with_api_key(&mut mcp, "sk-test-key").await?;
+
+    let thread_start_request_id = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams::default())
+        .await?;
+    let thread_start: ThreadStartResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(thread_start_request_id)).await??;
+    let start_request_id = mcp
+        .send_thread_realtime_start_request(ThreadRealtimeStartParams {
+            thread_id: thread_start.thread.id.clone(),
+            client_managed_handoffs: Some(true),
+            delegation_ack_filler: None,
+            flush_transcript_tail_on_session_end: Some(false),
+            codex_responses_as_items: Some(false),
+            codex_response_item_prefix: None,
+            codex_response_handoff_mode: None,
+            codex_response_handoff_channel_prefixes: None,
+            model: None,
+            session_type: Some(RealtimeSessionType::Transcription),
+            output_modality: RealtimeOutputModality::Text,
+            include_startup_context: Some(false),
+            initial_items: None,
+            realtime_start_instructions: None,
+            realtime_end_instructions: None,
+            prompt: None,
+            realtime_session_id: None,
+            transport: Some(ThreadRealtimeStartTransport::Websocket),
+            version: Some(RealtimeConversationVersion::V2),
+            voice: None,
+        })
+        .await?;
+    let _: ThreadRealtimeStartResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(start_request_id)).await??;
+    let _ =
+        read_notification::<ThreadRealtimeStartedNotification>(&mut mcp, "thread/realtime/started")
+            .await?;
+
+    let request = realtime_server
+        .wait_for_request(/*connection_index*/ 0, /*request_index*/ 0)
+        .await
+        .body_json();
+    assert_eq!(request["session"]["type"], "transcription");
+    assert_eq!(request["session"]["instructions"], Value::Null);
+    assert_eq!(request["session"]["output_modalities"], Value::Null);
+    assert_eq!(request["session"]["tools"], Value::Null);
+    assert_eq!(
+        request["session"]["audio"]["input"],
+        json!({
+            "format": {"type": "audio/pcm", "rate": 24000},
+            "transcription": {"model": "gpt-live-transcribe", "delay": "medium"},
+            "turn_detection": null,
+        })
+    );
+    let append = mcp
+        .send_thread_realtime_append_audio_request(ThreadRealtimeAppendAudioParams {
+            thread_id: thread_start.thread.id.clone(),
+            audio: ThreadRealtimeAudioChunk {
+                data: "AQID".to_string(),
+                sample_rate: 24_000,
+                num_channels: 1,
+                samples_per_channel: None,
+                item_id: None,
+            },
+            commit: false,
+        })
+        .await?;
+    let _: ThreadRealtimeAppendAudioResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(append)).await??;
+    let delta = read_notification::<ThreadRealtimeTranscriptDeltaNotification>(
+        &mut mcp,
+        "thread/realtime/transcript/delta",
+    )
+    .await?;
+    assert_eq!(delta.delta, "hello");
+    let commit = mcp
+        .send_thread_realtime_append_audio_request(ThreadRealtimeAppendAudioParams {
+            thread_id: thread_start.thread.id,
+            audio: ThreadRealtimeAudioChunk {
+                sample_rate: 24_000,
+                num_channels: 1,
+                ..Default::default()
+            },
+            commit: true,
+        })
+        .await?;
+    let _: ThreadRealtimeAppendAudioResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(commit)).await??;
+    assert_eq!(
+        realtime_server
+            .wait_for_request(/*connection_index*/ 0, /*request_index*/ 1)
+            .await
+            .body_json(),
+        json!({"type": "input_audio_buffer.append", "audio": "AQID"})
+    );
+    assert_eq!(
+        realtime_server
+            .wait_for_request(/*connection_index*/ 0, /*request_index*/ 2)
+            .await
+            .body_json(),
+        json!({"type": "input_audio_buffer.commit"})
+    );
+    let done = read_notification::<ThreadRealtimeTranscriptDoneNotification>(
+        &mut mcp,
+        "thread/realtime/transcript/done",
+    )
+    .await?;
+    assert_eq!(done.text, "Hello from live transcription.");
 
     realtime_server.shutdown().await;
     Ok(())
@@ -1569,6 +1721,7 @@ async fn realtime_text_output_modality_requests_text_output_and_final_transcript
             codex_response_handoff_channel_prefixes: None,
             thread_id: thread_start.thread.id.clone(),
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Text,
             include_startup_context: None,
             initial_items: None,
@@ -1746,6 +1899,7 @@ async fn realtime_conversation_stop_emits_closed_notification() -> Result<()> {
             codex_response_handoff_channel_prefixes: None,
             thread_id: thread_start.thread.id.clone(),
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: None,
             initial_items: None,
@@ -1819,6 +1973,7 @@ async fn realtime_mode_uses_client_instructions_on_entry_and_exit() -> Result<()
             codex_response_handoff_mode: None,
             codex_response_handoff_channel_prefixes: None,
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: None,
             initial_items: None,
@@ -1954,6 +2109,7 @@ async fn realtime_webrtc_start_emits_sdp_notification() -> Result<()> {
             codex_response_handoff_channel_prefixes: None,
             thread_id: thread_id.clone(),
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: None,
             initial_items: None,
@@ -2172,6 +2328,7 @@ async fn existing_call_attaches_without_reinitializing_the_client_session(
             codex_response_handoff_channel_prefixes: None,
             codex_responses_as_items: None,
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: None,
             initial_items: None,
@@ -2260,6 +2417,7 @@ async fn existing_call_rejects_client_owned_session_configuration(option: &str) 
         codex_response_handoff_channel_prefixes: None,
         codex_responses_as_items: None,
         model: None,
+        session_type: None,
         output_modality: RealtimeOutputModality::Audio,
         include_startup_context: None,
         initial_items: None,
@@ -3779,6 +3937,7 @@ async fn realtime_webrtc_start_surfaces_backend_error() -> Result<()> {
             codex_response_handoff_channel_prefixes: None,
             thread_id: thread_start.thread.id,
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: None,
             initial_items: None,

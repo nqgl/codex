@@ -57,6 +57,7 @@ use codex_protocol::protocol::RealtimeConversationSdpEvent;
 use codex_protocol::protocol::RealtimeConversationStartedEvent;
 use codex_protocol::protocol::RealtimeHandoffRequested;
 use codex_protocol::protocol::RealtimeOutputModality;
+use codex_protocol::protocol::RealtimeSessionType;
 use codex_protocol::protocol::RealtimeTranscriptEntry;
 use codex_protocol::protocol::RealtimeVoice;
 use codex_protocol::protocol::RealtimeVoicesList;
@@ -459,7 +460,7 @@ struct RealtimeInputTask {
     events: RealtimeWebsocketEvents,
     text_rx: Receiver<ConversationTextParams>,
     handoff_output_rx: Receiver<RealtimeOutbound>,
-    audio_rx: Receiver<RealtimeAudioFrame>,
+    audio_rx: Receiver<ConversationAudioParams>,
     events_tx: Sender<RealtimeEvent>,
     handoff_state: RealtimeHandoffState,
     session_kind: RealtimeSessionKind,
@@ -475,7 +476,7 @@ struct RealtimeTranscriptTailFlush {
 struct RealtimeInputChannels {
     text_rx: Receiver<ConversationTextParams>,
     handoff_output_rx: Receiver<RealtimeOutbound>,
-    audio_rx: Receiver<RealtimeAudioFrame>,
+    audio_rx: Receiver<ConversationAudioParams>,
 }
 
 impl RealtimeHandoffState {
@@ -493,7 +494,7 @@ impl RealtimeHandoffState {
 
 #[allow(dead_code)]
 struct ConversationState {
-    audio_tx: Sender<RealtimeAudioFrame>,
+    audio_tx: Sender<ConversationAudioParams>,
     text_tx: Sender<ConversationTextParams>,
     session_kind: RealtimeSessionKind,
     handoff: RealtimeHandoffState,
@@ -621,7 +622,7 @@ impl RealtimeConversationManager {
         };
 
         let (audio_tx, audio_rx) =
-            async_channel::bounded::<RealtimeAudioFrame>(AUDIO_IN_QUEUE_CAPACITY);
+            async_channel::bounded::<ConversationAudioParams>(AUDIO_IN_QUEUE_CAPACITY);
         let (text_tx, text_rx) =
             async_channel::bounded::<ConversationTextParams>(TEXT_IN_QUEUE_CAPACITY);
         let (handoff_output_tx, handoff_output_rx) =
@@ -788,7 +789,7 @@ impl RealtimeConversationManager {
         }
     }
 
-    pub(crate) async fn audio_in(&self, frame: RealtimeAudioFrame) -> CodexResult<()> {
+    pub(crate) async fn audio_in(&self, params: ConversationAudioParams) -> CodexResult<()> {
         let sender = {
             let guard = self.state.lock().await;
             guard.as_ref().map(|state| state.audio_tx.clone())
@@ -800,7 +801,14 @@ impl RealtimeConversationManager {
             ));
         };
 
-        match sender.try_send(frame) {
+        // The final commit must not be dropped or overtake already queued audio.
+        if params.commit {
+            return sender
+                .send(params)
+                .await
+                .map_err(|_| CodexErr::InvalidRequest("conversation is not running".to_string()));
+        }
+        match sender.try_send(params) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => {
                 warn!("dropping input audio frame due to full queue");
@@ -1272,7 +1280,10 @@ async fn prepare_realtime_start(
     });
     match &transport {
         ConversationStartTransport::Webrtc { .. } => {
-            validate_avas_webrtc_start(version, config.realtime.session_type)?;
+            validate_avas_webrtc_start(
+                version,
+                resolved_realtime_session_type(&params, config.realtime.session_type),
+            )?;
         }
         ConversationStartTransport::ExistingCall { .. } => {
             if version == RealtimeWsVersion::V2 {
@@ -1284,6 +1295,7 @@ async fn prepare_realtime_start(
                 || params.prompt.is_some()
                 || !params.initial_items.is_empty()
                 || params.model.is_some()
+                || params.session_type.is_some()
                 || params.voice.is_some()
                 || params.delegation_ack_filler.is_some()
             {
@@ -1365,19 +1377,31 @@ async fn prepare_realtime_start(
 
 fn validate_avas_webrtc_start(
     version: RealtimeWsVersion,
-    session_type: RealtimeWsMode,
+    session_type: RealtimeSessionType,
 ) -> CodexResult<()> {
     if version == RealtimeWsVersion::V2 {
         return Err(CodexErr::InvalidRequest(
             "AVAS realtime calls require realtime v1 or v3".to_string(),
         ));
     }
-    if session_type != RealtimeWsMode::Conversational {
+    if session_type != RealtimeSessionType::Conversational {
         return Err(CodexErr::InvalidRequest(
             "AVAS realtime calls require conversational realtime".to_string(),
         ));
     }
     Ok(())
+}
+
+fn resolved_realtime_session_type(
+    params: &ConversationStartParams,
+    configured_session_type: RealtimeWsMode,
+) -> RealtimeSessionType {
+    params
+        .session_type
+        .unwrap_or(match configured_session_type {
+            RealtimeWsMode::Conversational => RealtimeSessionType::Conversational,
+            RealtimeWsMode::Transcription => RealtimeSessionType::Transcription,
+        })
 }
 
 pub(crate) async fn build_realtime_session_config(
@@ -1475,9 +1499,10 @@ pub(crate) async fn build_realtime_session_config(
             "text realtime output modality requires realtime v2".to_string(),
         ));
     }
-    let session_mode = match config.realtime.session_type {
-        RealtimeWsMode::Conversational => RealtimeSessionMode::Conversational,
-        RealtimeWsMode::Transcription => RealtimeSessionMode::Transcription,
+    let session_type = resolved_realtime_session_type(params, config.realtime.session_type);
+    let session_mode = match session_type {
+        RealtimeSessionType::Conversational => RealtimeSessionMode::Conversational,
+        RealtimeSessionType::Transcription => RealtimeSessionMode::Transcription,
     };
     let config_voice = match configured_voice {
         ConfiguredRealtimeVoice::Use => config.realtime.voice,
@@ -1723,7 +1748,7 @@ pub(crate) async fn handle_audio(
     sub_id: String,
     params: ConversationAudioParams,
 ) {
-    if let Err(err) = sess.conversation.audio_in(params.frame).await {
+    if let Err(err) = sess.conversation.audio_in(params).await {
         error!("failed to append realtime audio: {err}");
         if sess.conversation.running_state().await.is_some() {
             warn!("realtime audio input failed while the session was already ending");
@@ -2535,14 +2560,19 @@ async fn handle_realtime_server_event(
 }
 
 async fn handle_user_audio_input(
-    frame: Result<RealtimeAudioFrame, RecvError>,
+    frame: Result<ConversationAudioParams, RecvError>,
     writer: &RealtimeWebsocketWriter,
 ) -> anyhow::Result<()> {
-    let frame = frame.context("user audio input channel closed")?;
-    writer
-        .send_audio_frame(frame)
-        .await
-        .map_err(anyhow::Error::from)?;
+    let params = frame.context("user audio input channel closed")?;
+    if !params.frame.data.is_empty() || !params.commit {
+        writer
+            .send_audio_frame(params.frame)
+            .await
+            .map_err(anyhow::Error::from)?;
+    }
+    if params.commit {
+        writer.commit_audio().await.map_err(anyhow::Error::from)?;
+    }
     Ok(())
 }
 

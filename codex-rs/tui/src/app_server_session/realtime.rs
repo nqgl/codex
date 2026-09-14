@@ -30,6 +30,7 @@ impl AppServerSession {
             .request_typed(ClientRequest::ThreadRealtimeStart {
                 request_id,
                 params: ThreadRealtimeStartParams {
+                    session_type: None,
                     thread_id: thread_id.to_string(),
                     client_managed_handoffs: Some(true),
                     delegation_ack_filler: None,

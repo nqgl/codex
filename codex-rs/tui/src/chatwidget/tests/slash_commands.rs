@@ -1,5 +1,10 @@
 use super::*;
 use crate::bottom_pane::slash_commands::ServiceTierCommand;
+use crate::directory_watch::DirectoryWatchCommand;
+use crate::directory_watch::DirectoryWatchFilter;
+use crate::monitor::MonitorCommand;
+use crate::monitor::MonitorRequest;
+use crate::monitor::MonitorTrust;
 use pretty_assertions::assert_eq;
 use serial_test::serial;
 
@@ -3786,6 +3791,102 @@ async fn raw_slash_command_reports_usage_for_invalid_arg() {
         rendered.contains("Usage: /raw [on|off]"),
         "expected raw usage error, got {rendered:?}"
     );
+}
+
+#[tokio::test]
+async fn agent_messages_slash_command_toggles_and_accepts_on_off_args() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::AgentMessages);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::SetAgentMessageFeed { enabled: None })
+    ));
+
+    chat.dispatch_command_with_args(SlashCommand::AgentMessages, "off".to_string(), Vec::new());
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::SetAgentMessageFeed {
+            enabled: Some(false)
+        })
+    ));
+
+    chat.dispatch_command_with_args(SlashCommand::AgentMessages, "on".to_string(), Vec::new());
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::SetAgentMessageFeed {
+            enabled: Some(true)
+        })
+    ));
+}
+
+#[tokio::test]
+async fn watch_slash_command_sends_bounded_app_command() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Watch,
+        "notes --tagged".to_string(),
+        Vec::new(),
+    );
+
+    match rx.try_recv() {
+        Ok(AppEvent::DirectoryWatchCommand(DirectoryWatchCommand::Start(request))) => {
+            assert_eq!(
+                request,
+                crate::directory_watch::DirectoryWatchRequest {
+                    root: chat.config.cwd.join("notes").to_path_buf(),
+                    filter: DirectoryWatchFilter::HeaderMarkers(vec![
+                        "@all".to_string(),
+                        "@codex".to_string(),
+                    ]),
+                    mode: crate::directory_watch::DirectoryWatchMode::FilesAndCommits,
+                    trust: crate::directory_watch::DirectoryWatchTrust::Untrusted,
+                }
+            );
+        }
+        other => panic!("expected directory watch start command, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn bare_watch_slash_command_requests_status() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Watch);
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::DirectoryWatchCommand(
+            DirectoryWatchCommand::Status
+        ))
+    );
+}
+
+#[tokio::test]
+async fn monitor_slash_command_starts_named_command() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Monitor,
+        "add agent-comms --trust -- ./watch codex".to_string(),
+        Vec::new(),
+    );
+
+    match rx.try_recv() {
+        Ok(AppEvent::MonitorCommand(MonitorCommand::Add(request))) => {
+            assert_eq!(
+                request,
+                MonitorRequest {
+                    name: "agent-comms".to_string(),
+                    command: "./watch codex".to_string(),
+                    cwd: chat.config.cwd.to_path_buf(),
+                    trust: MonitorTrust::Trusted,
+                }
+            );
+        }
+        other => panic!("expected monitor add command, got {other:?}"),
+    }
 }
 
 #[tokio::test]

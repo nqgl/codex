@@ -291,28 +291,38 @@ impl ChatWidget {
                     self.on_realtime_conversation_sdp(notification.sdp);
                 }
             }
-            ServerNotification::ThreadRealtimeStarted(_) => {
-                if !from_replay {
+            ServerNotification::ThreadRealtimeStarted(notification) => {
+                if !from_replay && self.dictation.phase != super::dictation::DictationPhase::Idle {
+                    self.on_dictation_started(notification);
+                } else if !from_replay {
                     self.on_realtime_conversation_started();
                 }
             }
             ServerNotification::ThreadRealtimeTranscriptDelta(notification) => {
-                if !from_replay {
+                if !from_replay && self.dictation.phase != super::dictation::DictationPhase::Idle {
+                    self.on_dictation_transcript_delta(notification);
+                } else if !from_replay {
                     self.on_realtime_transcript_delta(notification.role, notification.delta);
                 }
             }
             ServerNotification::ThreadRealtimeTranscriptDone(notification) => {
-                if !from_replay {
+                if !from_replay && self.dictation.phase != super::dictation::DictationPhase::Idle {
+                    self.on_dictation_transcript_done(notification);
+                } else if !from_replay {
                     self.on_realtime_transcript_done(notification.role, notification.text);
                 }
             }
             ServerNotification::ThreadRealtimeError(notification) => {
-                if !from_replay {
+                if !from_replay && self.dictation.phase != super::dictation::DictationPhase::Idle {
+                    self.on_dictation_error(notification);
+                } else if !from_replay {
                     self.on_realtime_error(notification.message);
                 }
             }
             ServerNotification::ThreadRealtimeClosed(notification) => {
-                if !from_replay {
+                if !from_replay && self.dictation.phase != super::dictation::DictationPhase::Idle {
+                    self.on_dictation_closed(notification);
+                } else if !from_replay {
                     self.on_realtime_conversation_closed(notification.reason);
                 }
             }

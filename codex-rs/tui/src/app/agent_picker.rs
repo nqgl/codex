@@ -109,6 +109,12 @@ impl App {
         let selected = self
             .chat_widget
             .selected_index_for_present_view(AGENT_PICKER_VIEW_ID);
+        let selected_thread_id = selected.and_then(|selected| {
+            self.agent_navigation
+                .recently_active_threads(self.primary_thread_id)
+                .get(selected)
+                .map(|(thread_id, _)| *thread_id)
+        });
         for thread in threads {
             let Ok(thread_id) = ThreadId::from_string(&thread.id) else {
                 continue;
@@ -140,7 +146,14 @@ impl App {
                 self.agent_navigation.set_running(thread_id, is_running);
             }
         }
+        self.sync_active_agent_label();
 
+        let selected = selected_thread_id.and_then(|selected_thread_id| {
+            self.agent_navigation
+                .recently_active_threads(self.primary_thread_id)
+                .iter()
+                .position(|(thread_id, _)| *thread_id == selected_thread_id)
+        });
         let params = self.agent_picker_selection_view_params(selected);
         self.chat_widget
             .replace_selection_view_if_present(AGENT_PICKER_VIEW_ID, params);

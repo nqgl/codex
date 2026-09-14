@@ -2713,7 +2713,7 @@ async fn turn_start_accepts_deprecated_personality_override_v2() -> Result<()> {
 }
 
 #[tokio::test]
-async fn turn_start_ignores_deprecated_multi_agent_mode() -> Result<()> {
+async fn turn_start_honors_multi_agent_mode() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
@@ -2765,15 +2765,10 @@ async fn turn_start_ignores_deprecated_multi_agent_mode() -> Result<()> {
     let developer_texts = response_mock
         .single_request()
         .message_input_texts("developer");
-    assert!(developer_texts.iter().any(|text| {
-        text.contains(
-            "Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents",
-        )
-    }));
     assert!(
-        !developer_texts
+        developer_texts
             .iter()
-            .any(|text| text.contains("Proactive multi-agent delegation is active."))
+            .any(|text| text.contains("Proactive multi-agent delegation is active"))
     );
 
     Ok(())
@@ -2839,14 +2834,12 @@ async fn thread_start_ignores_deprecated_multi_agent_mode() -> Result<()> {
         .message_input_texts("developer");
     assert!(developer_texts.iter().any(|text| {
         text.contains(MULTI_AGENT_MODE_OPEN_TAG)
-            && text.contains(
-                "Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents",
-            )
+            && text.contains("Do not spawn sub-agents unless the user or applicable AGENTS.md")
     }));
     assert!(
         !developer_texts
             .iter()
-            .any(|text| text.contains("Proactive multi-agent delegation is active."))
+            .any(|text| text.contains("Proactive multi-agent delegation is active"))
     );
 
     Ok(())

@@ -3,6 +3,7 @@ use super::*;
 use codex_agent_extension::AgentInvocation;
 use codex_agent_extension::AgentRun;
 use codex_agent_extension::AgentRunner;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -132,6 +133,8 @@ struct ThreadSettingsBuildParams {
     effort: Option<ReasoningEffort>,
     summary: Option<ReasoningSummary>,
     collaboration_mode: Option<CollaborationMode>,
+    multi_agent_mode: Option<MultiAgentMode>,
+    multi_agent_max_concurrent_threads: Option<usize>,
     personality: Option<Personality>,
 }
 
@@ -640,6 +643,8 @@ impl TurnRequestProcessor {
                     effort: params.effort,
                     summary: params.summary,
                     collaboration_mode: params.collaboration_mode,
+                    multi_agent_mode: params.multi_agent_mode,
+                    multi_agent_max_concurrent_threads: None,
                     personality: params.personality,
                 },
             )
@@ -792,6 +797,8 @@ impl TurnRequestProcessor {
             effort,
             summary,
             collaboration_mode,
+            multi_agent_mode,
+            multi_agent_max_concurrent_threads,
             personality,
         } = params;
 
@@ -824,6 +831,8 @@ impl TurnRequestProcessor {
             || effort.is_some()
             || summary.is_some()
             || collaboration_mode.is_some()
+            || multi_agent_mode.is_some()
+            || multi_agent_max_concurrent_threads.is_some()
             || personality.is_some();
 
         let approval_policy =
@@ -894,6 +903,8 @@ impl TurnRequestProcessor {
                     summary,
                     service_tier: service_tier.clone(),
                     collaboration_mode: collaboration_mode.clone(),
+                    multi_agent_mode: multi_agent_mode.clone(),
+                    multi_agent_max_concurrent_threads,
                     personality,
                 })
                 .await
@@ -918,6 +929,8 @@ impl TurnRequestProcessor {
             summary,
             service_tier,
             collaboration_mode,
+            multi_agent_mode,
+            multi_agent_max_concurrent_threads,
             personality,
         })
     }
@@ -955,6 +968,8 @@ impl TurnRequestProcessor {
                     effort: params.effort,
                     summary: params.summary,
                     collaboration_mode: params.collaboration_mode,
+                    multi_agent_mode: params.multi_agent_mode,
+                    multi_agent_max_concurrent_threads: params.multi_agent_max_concurrent_threads,
                     personality: params.personality,
                 },
             )
@@ -1245,6 +1260,7 @@ impl TurnRequestProcessor {
                 codex_response_handoff_channel_prefixes: params
                     .codex_response_handoff_channel_prefixes,
                 model: params.model,
+                session_type: params.session_type,
                 output_modality: params.output_modality,
                 include_startup_context: params
                     .include_startup_context
@@ -1301,6 +1317,7 @@ impl TurnRequestProcessor {
             thread.as_ref(),
             Op::RealtimeConversationAudio(ConversationAudioParams {
                 frame: params.audio.into(),
+                commit: params.commit,
             }),
         )
         .await

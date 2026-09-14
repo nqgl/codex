@@ -15,11 +15,25 @@ use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_config::types::ApprovalsReviewer;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::MODEL_SPECIALTY_CYBER;
 
 impl App {
+    pub(super) fn on_update_multi_agent_mode(&mut self, mode: MultiAgentMode) {
+        self.config.multi_agent_v2.mode = Some(mode.clone());
+        self.chat_widget.set_multi_agent_mode(mode);
+    }
+
+    pub(super) fn on_update_multi_agent_max_concurrent_threads(&mut self, max_threads: usize) {
+        self.config
+            .multi_agent_v2
+            .max_concurrent_threads_per_session = max_threads;
+        self.chat_widget
+            .set_multi_agent_max_concurrent_threads(max_threads);
+    }
+
     pub(super) async fn sync_active_thread_model_setting(
         &mut self,
         app_server: &mut AppServerSession,
@@ -140,6 +154,38 @@ impl App {
         let params = ThreadSettingsUpdateParams {
             thread_id: thread_id.to_string(),
             collaboration_mode: Some(self.chat_widget.effective_collaboration_mode()),
+            ..ThreadSettingsUpdateParams::default()
+        };
+        self.send_thread_settings_update(app_server, params).await;
+    }
+
+    pub(super) async fn sync_active_thread_multi_agent_mode(
+        &mut self,
+        app_server: &mut AppServerSession,
+        mode: MultiAgentMode,
+    ) {
+        let Some(thread_id) = self.active_thread_id else {
+            return;
+        };
+        let params = ThreadSettingsUpdateParams {
+            thread_id: thread_id.to_string(),
+            multi_agent_mode: Some(mode),
+            ..ThreadSettingsUpdateParams::default()
+        };
+        self.send_thread_settings_update(app_server, params).await;
+    }
+
+    pub(super) async fn sync_active_thread_multi_agent_max_concurrent_threads(
+        &mut self,
+        app_server: &mut AppServerSession,
+        max_threads: usize,
+    ) {
+        let Some(thread_id) = self.active_thread_id else {
+            return;
+        };
+        let params = ThreadSettingsUpdateParams {
+            thread_id: thread_id.to_string(),
+            multi_agent_max_concurrent_threads: Some(max_threads),
             ..ThreadSettingsUpdateParams::default()
         };
         self.send_thread_settings_update(app_server, params).await;
@@ -280,5 +326,7 @@ fn thread_settings_update_has_changes(params: &ThreadSettingsUpdateParams) -> bo
         || params.effort.is_some()
         || params.summary.is_some()
         || params.collaboration_mode.is_some()
+        || params.multi_agent_mode.is_some()
+        || params.multi_agent_max_concurrent_threads.is_some()
         || params.personality.is_some()
 }

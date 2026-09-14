@@ -745,6 +745,10 @@ impl Session {
         per_turn_config.service_tier = session_configuration.step_settings.service_tier.clone();
         per_turn_config.personality = session_configuration.step_settings.personality;
         per_turn_config.approvals_reviewer = session_configuration.step_settings.approvals_reviewer;
+        per_turn_config
+            .multi_agent_v2
+            .max_concurrent_threads_per_session =
+            self.services.agent_control.max_concurrent_threads();
         session_configuration
             .apply_permission_profile_to_permissions(&mut per_turn_config.permissions);
         let permission_profile = session_configuration.permission_profile();

@@ -144,6 +144,10 @@ pub(crate) enum StatusLineItem {
     /// Whether raw scrollback mode is currently active.
     RawOutput,
 
+    /// Current multi-agent delegation policy.
+    #[strum(to_string = "delegation", serialize = "delegation-mode")]
+    DelegationMode,
+
     /// Current thread name, omitted when unnamed.
     ThreadName,
 
@@ -205,6 +209,7 @@ impl StatusLineItem {
             StatusLineItem::SessionId => "Current thread identifier (omitted until thread starts)",
             StatusLineItem::FastMode => "Whether Fast mode is currently active",
             StatusLineItem::RawOutput => "Whether raw scrollback mode is active",
+            StatusLineItem::DelegationMode => "Current multi-agent delegation policy",
             StatusLineItem::ThreadName => "Current thread name (omitted when unnamed)",
             StatusLineItem::ThreadTitle => {
                 "Current thread title, or thread identifier when unnamed"
@@ -246,6 +251,7 @@ impl StatusLineItem {
             StatusLineItem::SessionId => StatusSurfacePreviewItem::SessionId,
             StatusLineItem::FastMode => StatusSurfacePreviewItem::FastMode,
             StatusLineItem::RawOutput => StatusSurfacePreviewItem::RawOutput,
+            StatusLineItem::DelegationMode => StatusSurfacePreviewItem::DelegationMode,
             StatusLineItem::ThreadName => StatusSurfacePreviewItem::ThreadName,
             StatusLineItem::ThreadTitle => StatusSurfacePreviewItem::ThreadTitle,
             StatusLineItem::WorkspaceHeadline => StatusSurfacePreviewItem::WorkspaceHeadline,
@@ -313,7 +319,7 @@ impl StatusLineSetupView {
             }
         }
 
-        for item in StatusLineItem::iter() {
+        for item in StatusLineItem::iter().filter(|item| *item != StatusLineItem::DelegationMode) {
             let item_id = item.to_string();
             if used_ids.contains(&item_id) {
                 continue;

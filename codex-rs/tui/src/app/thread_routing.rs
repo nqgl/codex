@@ -219,16 +219,29 @@ impl App {
         true
     }
 
-    /// Mirrors the visible thread into the contextual footer row.
+    /// Mirrors the visible thread and running background agents into the contextual footer row.
     ///
     /// The footer sometimes shows ambient context instead of an instructional hint. In multi-agent
-    /// sessions, that contextual row includes the currently viewed agent label. The label is
-    /// intentionally hidden until there is more than one known thread so single-thread sessions do
-    /// not spend footer space restating that the user is already on the main conversation.
+    /// sessions, that row includes the currently viewed agent label and a running subagent count.
+    /// The main-agent label is hidden until there is more than one known thread, while a running
+    /// count remains independently visible. Side conversations are excluded from the count.
     pub(super) fn sync_active_agent_label(&mut self) {
-        let label = self
+        let running_subagent_count = self
             .agent_navigation
-            .active_agent_label(self.current_displayed_thread_id(), self.primary_thread_id);
+            .ordered_threads()
+            .into_iter()
+            .filter(|(thread_id, entry)| {
+                Some(*thread_id) != self.primary_thread_id
+                    && entry.is_running
+                    && !entry.is_closed
+                    && !self.side_threads.contains_key(thread_id)
+            })
+            .count();
+        let label = self.agent_navigation.active_agent_label(
+            self.current_displayed_thread_id(),
+            self.primary_thread_id,
+            running_subagent_count,
+        );
         self.chat_widget.set_active_agent_label(label);
         self.sync_side_thread_ui();
     }
@@ -927,6 +940,38 @@ impl App {
                     .await?;
                 Ok(true)
             }
+            AppCommand::DictationStart => {
+                app_server.dictation_start(thread_id).await?;
+                Ok(true)
+            }
+            AppCommand::DictationAudio(frame) => {
+                app_server
+                    .dictation_audio(codex_app_server_protocol::ThreadRealtimeAppendAudioParams {
+                        thread_id: thread_id.to_string(),
+                        audio: frame.clone(),
+                        commit: false,
+                    })
+                    .await?;
+                Ok(true)
+            }
+            AppCommand::DictationCommit => {
+                app_server
+                    .dictation_audio(codex_app_server_protocol::ThreadRealtimeAppendAudioParams {
+                        thread_id: thread_id.to_string(),
+                        audio: codex_app_server_protocol::ThreadRealtimeAudioChunk {
+                            sample_rate: 24_000,
+                            num_channels: 1,
+                            ..Default::default()
+                        },
+                        commit: true,
+                    })
+                    .await?;
+                Ok(true)
+            }
+            AppCommand::DictationClose => {
+                app_server.dictation_close(thread_id).await?;
+                Ok(true)
+            }
             AppCommand::RealtimeConversationStart {
                 thread_id: realtime_thread_id,
                 offer_sdp,
@@ -1204,6 +1249,28 @@ impl App {
                 permission_change_confirmed = true;
             }
         }
+        if self.agent_message_feed_enabled
+            && self.active_thread_id != Some(thread_id)
+            && let ServerNotification::ItemCompleted(notification) = &notification
+            && let ThreadItem::SubAgentActivity {
+                kind: codex_app_server_protocol::SubAgentActivityKind::Interacted,
+                agent_path: receiver_path,
+                ..
+            } = &notification.item
+        {
+            let sender_path = if self.primary_thread_id == Some(thread_id) {
+                "/root".to_string()
+            } else {
+                self.agent_navigation
+                    .get(&thread_id)
+                    .and_then(|entry| entry.agent_path.clone())
+                    .unwrap_or_else(|| thread_id.to_string())
+            };
+            self.chat_widget.add_info_message(
+                format!("Message `{sender_path}` → `{receiver_path}`"),
+                /*hint*/ None,
+            );
+        }
         let inferred_session = if let ServerNotification::ThreadStarted(started) = &notification
             && self.primary_session_configured.is_some()
         {
@@ -1230,6 +1297,7 @@ impl App {
         } else {
             None
         };
+        self.agent_navigation.record_activity(thread_id);
         let is_turn_started = matches!(notification, ServerNotification::TurnStarted(_));
         let is_thread_closed = matches!(notification, ServerNotification::ThreadClosed(_));
         let notification_status_change = SideParentStatusChange::for_notification(&notification);
@@ -1268,10 +1336,13 @@ impl App {
         };
         if is_turn_started {
             self.agent_navigation.mark_running(thread_id);
+            self.sync_active_agent_label();
         } else if is_thread_closed {
             self.mark_agent_picker_thread_closed(thread_id);
+            self.sync_active_agent_label();
         } else if turn_stopped {
             self.agent_navigation.mark_stopped(thread_id);
+            self.sync_active_agent_label();
         }
 
         // Settings snapshots do not belong in the transcript queue: apply them in receive order.
@@ -1323,12 +1394,32 @@ impl App {
         &mut self,
         notification: &ServerNotification,
     ) {
-        if let Some(activity) =
-            sub_agent_activity_item(notification).and_then(sub_agent_activity_display)
-        {
-            self.agent_navigation.record_sub_agent_activity(activity);
-            self.sync_active_agent_label();
-            return;
+        if let Some(activity_item) = sub_agent_activity_item(notification) {
+            if let Some(activity) = sub_agent_activity_display(activity_item) {
+                self.agent_navigation.record_sub_agent_activity(activity);
+                self.sync_active_agent_label();
+                return;
+            }
+            if let ThreadItem::SubAgentActivity {
+                kind: codex_app_server_protocol::SubAgentActivityKind::Interacted,
+                agent_thread_id,
+                agent_path,
+                ..
+            } = activity_item
+                && let Ok(thread_id) = ThreadId::from_string(agent_thread_id)
+            {
+                if self.agent_navigation.get(&thread_id).is_none() {
+                    self.upsert_agent_picker_thread(
+                        thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
+                        /*is_closed*/ false,
+                    );
+                }
+                self.agent_navigation
+                    .set_agent_path(thread_id, Some(agent_path.clone()));
+                self.agent_navigation.record_activity(thread_id);
+                self.sync_active_agent_label();
+                return;
+            }
         }
 
         let Some(receiver_thread_ids) = collab_receiver_thread_ids(notification) else {
@@ -1348,14 +1439,13 @@ impl App {
                 continue;
             };
 
-            if self.agent_navigation.get(&thread_id).is_some() {
-                continue;
+            if self.agent_navigation.get(&thread_id).is_none() {
+                self.upsert_agent_picker_thread(
+                    thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
+                    /*is_closed*/ false,
+                );
             }
-
-            self.upsert_agent_picker_thread(
-                thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
-                /*is_closed*/ false,
-            );
+            self.agent_navigation.record_activity(thread_id);
         }
     }
 

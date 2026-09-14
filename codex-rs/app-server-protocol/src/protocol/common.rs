@@ -2060,6 +2060,7 @@ mod tests {
     use codex_protocol::protocol::ConversationTextRole;
     use codex_protocol::protocol::RealtimeConversationVersion;
     use codex_protocol::protocol::RealtimeOutputModality;
+    use codex_protocol::protocol::RealtimeSessionType;
     use codex_protocol::protocol::RealtimeVoice;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_absolute_path::test_support::PathBufExt;
@@ -3230,6 +3231,7 @@ mod tests {
                 active_permission_profile: None,
                 reasoning_effort: None,
                 multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
+                multi_agent_max_concurrent_threads: 4,
             },
         };
 
@@ -3290,7 +3292,8 @@ mod tests {
                     },
                     "activePermissionProfile": null,
                     "reasoningEffort": null,
-                    "multiAgentMode": "explicitRequestOnly"
+                    "multiAgentMode": "explicitRequestOnly",
+                    "multiAgentMaxConcurrentThreads": 4
                 }
             }),
             serde_json::to_value(&response)?,
@@ -4000,6 +4003,7 @@ mod tests {
                 ])),
                 thread_id: "thr_123".to_string(),
                 model: Some("realtime-treatment-model".to_string()),
+                session_type: Some(RealtimeSessionType::Transcription),
                 output_modality: RealtimeOutputModality::Audio,
                 include_startup_context: Some(false),
                 initial_items: Some(vec![
@@ -4039,6 +4043,7 @@ mod tests {
                         "final": ["[DONE]"]
                     },
                     "model": "realtime-treatment-model",
+                    "sessionType": "transcription",
                     "outputModality": "audio",
                     "includeStartupContext": false,
                     "initialItems": [
@@ -4079,6 +4084,7 @@ mod tests {
                 codex_response_handoff_channel_prefixes: None,
                 thread_id: "thr_123".to_string(),
                 model: None,
+                session_type: None,
                 output_modality: RealtimeOutputModality::Audio,
                 include_startup_context: None,
                 initial_items: None,
@@ -4105,6 +4111,7 @@ mod tests {
                     "codexResponseHandoffMode": null,
                     "codexResponseHandoffChannelPrefixes": null,
                     "model": null,
+                    "sessionType": null,
                     "outputModality": "audio",
                     "includeStartupContext": null,
                     "initialItems": null,
@@ -4131,6 +4138,7 @@ mod tests {
                 codex_response_handoff_channel_prefixes: None,
                 thread_id: "thr_123".to_string(),
                 model: None,
+                session_type: None,
                 output_modality: RealtimeOutputModality::Audio,
                 include_startup_context: None,
                 initial_items: None,
@@ -4157,6 +4165,7 @@ mod tests {
                     "codexResponseHandoffMode": null,
                     "codexResponseHandoffChannelPrefixes": null,
                     "model": null,
+                    "sessionType": null,
                     "outputModality": "audio",
                     "includeStartupContext": null,
                     "initialItems": null,
@@ -4383,6 +4392,7 @@ mod tests {
                 codex_response_handoff_channel_prefixes: None,
                 thread_id: "thr_123".to_string(),
                 model: None,
+                session_type: None,
                 output_modality: RealtimeOutputModality::Audio,
                 include_startup_context: None,
                 initial_items: None,
@@ -4494,6 +4504,7 @@ mod tests {
                         },
                     },
                     multi_agent_mode: Default::default(),
+                    multi_agent_max_concurrent_threads: 4,
                     personality: None,
                 },
             });

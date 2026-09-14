@@ -96,13 +96,14 @@ pub(super) fn session_update_session(
                     }),
                     transcription: Some(SessionInputAudioTranscription {
                         model: REALTIME_V2_INPUT_TRANSCRIPTION_MODEL.to_string(),
+                        delay: None,
                     }),
-                    turn_detection: Some(SessionTurnDetection {
+                    turn_detection: Some(Some(SessionTurnDetection {
                         r#type: TurnDetectionType::ServerVad,
                         interrupt_response: true,
                         create_response: true,
                         silence_duration_ms: 500,
-                    }),
+                    })),
                 },
                 output: Some(SessionAudioOutput {
                     format: Some(SessionAudioOutputFormat {
@@ -156,9 +157,13 @@ pub(super) fn session_update_session(
                     },
                     noise_reduction: None,
                     transcription: Some(SessionInputAudioTranscription {
-                        model: REALTIME_V2_INPUT_TRANSCRIPTION_MODEL.to_string(),
+                        // Dictation streams text during speech. Match the medium-delay
+                        // configuration evaluated in the local transcription comparison.
+                        model: "gpt-live-transcribe".to_string(),
+                        delay: Some("medium".to_string()),
                     }),
-                    turn_detection: None,
+                    // Live transcription requires an explicit audio commit, not server VAD.
+                    turn_detection: Some(None),
                 },
                 output: None,
             },

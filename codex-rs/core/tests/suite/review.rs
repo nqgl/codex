@@ -721,7 +721,7 @@ async fn review_uses_updated_turn_permissions_and_approval_policy() {
         request
             .message_input_texts("developer")
             .iter()
-            .any(|text| text.contains("Approval policy is currently never")),
+            .any(|text| text.contains("Approval policy is currently `never`")),
         "review should use the updated approval policy"
     );
     assert!(

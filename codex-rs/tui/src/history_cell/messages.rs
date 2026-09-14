@@ -579,7 +579,7 @@ impl HistoryCell for AgentMarkdownCell {
     }
 
     fn has_stable_transcript_height(&self) -> bool {
-        self.rendered_lines.is_some()
+        self.rendered_lines.is_some() && !crate::math_render::has_math(&self.markdown_source)
     }
 }
 

@@ -312,6 +312,23 @@ fn sync_review_fragments(request: &Value) -> Vec<&str> {
         .collect()
 }
 
+fn is_completion_wake_request(request: &Value) -> bool {
+    request["input"]
+        .as_array()
+        .and_then(|input| {
+            input.iter().rev().find(|item| {
+                item["type"] == "agent_message"
+                    || item["type"] == "function_call_output"
+                    || item["type"] == "custom_tool_call_output"
+                    || item["type"] == "message" && item["role"] == "user"
+            })
+        })
+        .is_some_and(|item| {
+            item["type"] == "agent_message"
+                && item.to_string().contains("Message Type: FINAL_ANSWER")
+        })
+}
+
 async fn wait_for_luna_request(state: &MockResponsesState, index: usize) -> Result<Value> {
     Ok(timeout(TIMEOUT, async {
         loop {
@@ -438,6 +455,18 @@ async fn parent_response(
             responses::ev_response_created("guardian-review"),
             responses::ev_assistant_message("guardian-assessment", &assessment),
             responses::ev_completed("guardian-review"),
+        ]
+    } else if state.root_worker
+        && !state.root_user_input_restriction
+        && request
+            .pointer("/client_metadata/x-codex-parent-thread-id")
+            .is_none()
+        && is_completion_wake_request(&request)
+    {
+        vec![
+            responses::ev_response_created("root-completion-wake"),
+            responses::ev_assistant_message("root-completion-wake-message", "completion received"),
+            responses::ev_completed("root-completion-wake"),
         ]
     } else if state.root_worker
         && request

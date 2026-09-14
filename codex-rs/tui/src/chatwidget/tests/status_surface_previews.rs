@@ -193,6 +193,17 @@ async fn status_surface_preview_lines_hardcoded_only_snapshot() {
 }
 
 #[tokio::test]
+async fn delegation_status_surface_preview_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.6-sol")).await;
+    chat.set_multi_agent_mode(MultiAgentMode::Proactive);
+
+    assert_chatwidget_snapshot!(
+        "delegation_status_surface_preview",
+        status_preview_line(&mut chat, &[StatusLineItem::DelegationMode])
+    );
+}
+
+#[tokio::test]
 async fn thread_title_falls_back_to_thread_id_when_unnamed() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let thread_id = ThreadId::new();

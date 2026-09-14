@@ -182,6 +182,19 @@ impl AgentControl {
         self.session_id
     }
 
+    pub(crate) fn max_concurrent_threads(&self) -> usize {
+        self.agent_execution_limiter.max_threads().saturating_add(1)
+    }
+
+    pub(super) fn max_subagent_threads(&self) -> usize {
+        self.agent_execution_limiter.max_threads()
+    }
+
+    pub(crate) fn set_max_concurrent_threads(&self, max_threads: usize) {
+        self.agent_execution_limiter
+            .set_max_threads(max_threads.saturating_sub(1));
+    }
+
     pub(crate) fn generate_thread_id(&self) -> ThreadId {
         (self.thread_id_generator)()
     }
@@ -689,7 +702,7 @@ impl AgentControl {
                     parent_agent_path,
                     Vec::new(),
                     message,
-                    /*trigger_turn*/ false,
+                    /*trigger_turn*/ true,
                 );
                 let context =
                     AgentCommunicationContext::new(AgentCommunicationKind::Result, child_thread_id);

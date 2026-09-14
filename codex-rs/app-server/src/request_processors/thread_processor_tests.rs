@@ -693,6 +693,8 @@ mod thread_processor_behavior_tests {
             profile_workspace_roots: Vec::new(),
             ephemeral: false,
             reasoning_effort: None,
+            multi_agent_mode: codex_protocol::config_types::MultiAgentMode::ExplicitRequestOnly,
+            multi_agent_max_concurrent_threads: 4,
             reasoning_summary: None,
             personality: None,
             collaboration_mode: CollaborationMode {

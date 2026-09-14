@@ -151,7 +151,7 @@ fn empty_catalog_permission_message_preserves_non_sandbox_sections() {
     let text = instructions.body();
 
     assert!(!text.contains("Filesystem sandboxing defines"));
-    assert!(text.contains("Approval policy is currently never"));
+    assert!(text.contains("Approval policy is currently `never`"));
     assert!(text.contains(writable_root.to_string_lossy().as_ref()));
 }
 

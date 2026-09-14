@@ -264,7 +264,7 @@ pub struct TurnStartParams {
     #[ts(optional = nullable)]
     pub collaboration_mode: Option<CollaborationMode>,
 
-    /// @deprecated Ignored. Use `effort: "ultra"` for proactive multi-agent behavior.
+    /// Set the multi-agent delegation policy independently of reasoning effort.
     #[experimental("turn/start.multiAgentMode")]
     #[ts(optional = nullable)]
     pub multi_agent_mode: Option<MultiAgentMode>,

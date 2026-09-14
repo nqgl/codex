@@ -52,6 +52,8 @@ pub struct RealtimeSessionConfig {
 pub(super) enum RealtimeOutboundMessage {
     #[serde(rename = "input_audio_buffer.append")]
     InputAudioBufferAppend { audio: String },
+    #[serde(rename = "input_audio_buffer.commit")]
+    InputAudioBufferCommit,
     #[serde(rename = "conversation.handoff.append")]
     ConversationHandoffAppend {
         handoff_id: String,
@@ -138,13 +140,16 @@ pub(super) struct SessionAudioInput {
     pub(super) noise_reduction: Option<SessionNoiseReduction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) transcription: Option<SessionInputAudioTranscription>,
+    /// Omit for legacy sessions; serialize null to explicitly disable server VAD.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) turn_detection: Option<SessionTurnDetection>,
+    pub(super) turn_detection: Option<Option<SessionTurnDetection>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct SessionInputAudioTranscription {
     pub(super) model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) delay: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

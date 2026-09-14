@@ -68,6 +68,7 @@ async fn existing_call_uses_selected_endpoint_and_runtime_auth(
             codex_response_handoff_mode: CodexResponseHandoffMode::Thinking,
             codex_response_handoff_channel_prefixes: None,
             model: None,
+            session_type: None,
             output_modality: RealtimeOutputModality::Audio,
             include_startup_context: false,
             initial_items: Vec::new(),

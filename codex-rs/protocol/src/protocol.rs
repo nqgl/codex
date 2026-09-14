@@ -235,6 +235,8 @@ pub struct ConversationStartParams {
     pub codex_response_handoff_channel_prefixes: Option<BTreeMap<String, Vec<String>>>,
     /// Overrides the configured realtime model for this session only.
     pub model: Option<String>,
+    /// Overrides the configured realtime session type for this session only.
+    pub session_type: Option<RealtimeSessionType>,
     /// Selects whether the realtime session should produce text or audio output.
     pub output_modality: RealtimeOutputModality,
     /// Whether to append Codex's startup context to the realtime backend prompt.
@@ -273,6 +275,14 @@ pub enum ConversationStartTransport {
 pub enum RealtimeOutputModality {
     Text,
     Audio,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum RealtimeSessionType {
+    Conversational,
+    Transcription,
 }
 
 #[derive(
@@ -465,6 +475,7 @@ pub enum RealtimeEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConversationAudioParams {
     pub frame: RealtimeAudioFrame,
+    pub commit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -570,6 +581,12 @@ pub struct ThreadSettingsOverrides {
     /// EXPERIMENTAL - set a pre-set collaboration mode.
     /// Takes precedence over model, effort, and developer instructions if set.
     pub collaboration_mode: Option<CollaborationMode>,
+
+    /// Updated multi-agent delegation policy for future turns.
+    pub multi_agent_mode: Option<MultiAgentMode>,
+
+    /// Updated multi-agent concurrency cap for the current thread tree.
+    pub multi_agent_max_concurrent_threads: Option<usize>,
 
     /// Updated personality preference.
     pub personality: Option<Personality>,
@@ -2218,6 +2235,11 @@ pub struct ThreadSettingsSnapshot {
     pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<ReasoningEffortConfig>,
+    #[serde(default)]
+    pub multi_agent_mode: MultiAgentMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub multi_agent_max_concurrent_threads: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_summary: Option<ReasoningSummaryConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]

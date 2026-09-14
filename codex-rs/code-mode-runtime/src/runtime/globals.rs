@@ -1,5 +1,6 @@
 use super::RuntimeState;
 use super::callbacks::audio_callback;
+use super::callbacks::bundle_callback;
 use super::callbacks::clear_timeout_callback;
 use super::callbacks::exit_callback;
 use super::callbacks::generated_image_callback;
@@ -32,6 +33,7 @@ pub(super) fn install_globals(scope: &mut v8::PinScope<'_, '_>) -> Result<(), St
     let notify = helper_function(scope, "notify", notify_callback)?;
     let yield_control = helper_function(scope, "yield_control", yield_control_callback)?;
     let exit = helper_function(scope, "exit", exit_callback)?;
+    let bundle_invoke = helper_function(scope, "__codexBundleInvoke", bundle_callback)?;
 
     set_global(scope, global, "tools", tools.into())?;
     set_global(scope, global, "ALL_TOOLS", all_tools)?;
@@ -46,6 +48,8 @@ pub(super) fn install_globals(scope: &mut v8::PinScope<'_, '_>) -> Result<(), St
     set_global(scope, global, "notify", notify.into())?;
     set_global(scope, global, "yield_control", yield_control.into())?;
     set_global(scope, global, "exit", exit.into())?;
+    set_global(scope, global, "__codexBundleInvoke", bundle_invoke.into())?;
+    super::bundle_api::install(scope)?;
     Ok(())
 }
 

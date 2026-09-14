@@ -1,3 +1,6 @@
+mod bundle_handler;
+mod bundle_query;
+mod bundle_truncation;
 mod delegate;
 mod execute_handler;
 pub(crate) mod execute_spec;
@@ -11,16 +14,22 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use codex_code_mode::BundleItemInput;
+use codex_code_mode::BundleOrigin;
+use codex_code_mode::BundleReference;
+use codex_code_mode::BundleSnapshot;
 use codex_code_mode::CellId;
 use codex_code_mode::CodeModeNestedToolCall;
 use codex_code_mode::CodeModeSession;
 use codex_code_mode::CodeModeSessionProvider;
 use codex_code_mode::CodeModeToolKind;
+use codex_code_mode::QueryableBundleStore;
 use codex_code_mode::RuntimeResponse;
 use codex_protocol::ThreadId;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use futures::future::join_all;
 use serde_json::Value as JsonValue;
+use tokio::sync::Mutex;
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
@@ -39,13 +48,8 @@ use crate::tools::context::ToolPayload;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolCall;
 use crate::tools::router::ToolCallSource;
-use crate::unified_exec::resolve_max_tokens;
 use codex_protocol::openai_models::ToolMode;
 use codex_tools::ToolName;
-use codex_utils_audio::estimate_audio_token_count;
-use codex_utils_output_truncation::TruncationPolicy;
-use codex_utils_output_truncation::formatted_truncate_text_content_items_with_policy;
-use codex_utils_output_truncation::truncate_function_output_items_with_policy;
 
 use delegate::CodeModeCellDelegate;
 use delegate::CodeModeDispatchBroker;
@@ -69,11 +73,16 @@ pub(crate) struct ExecContext {
     pub(super) turn: Arc<TurnContext>,
 }
 
+type NestedToolFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<JsonValue, FunctionCallError>> + Send + 'static>,
+>;
+
 pub(crate) struct CodeModeService {
     session: OnceCell<Arc<dyn CodeModeSession>>,
     session_provider: Arc<dyn CodeModeSessionProvider>,
     availability: Result<(), String>,
     dispatch_broker: Arc<CodeModeDispatchBroker>,
+    bundle_store: Mutex<QueryableBundleStore>,
     default_exec_yield_time_ms: u64,
     shutdown_token: CancellationToken,
     unavailable_warning_emitted: AtomicBool,
@@ -93,6 +102,7 @@ impl CodeModeService {
             session_provider,
             availability,
             dispatch_broker,
+            bundle_store: Mutex::new(QueryableBundleStore::default()),
             default_exec_yield_time_ms: config.default_exec_yield_time_ms,
             shutdown_token: CancellationToken::new(),
             unavailable_warning_emitted: AtomicBool::new(false),
@@ -121,6 +131,26 @@ impl CodeModeService {
 
     pub(crate) fn session_provider(&self) -> Arc<dyn CodeModeSessionProvider> {
         Arc::clone(&self.session_provider)
+    }
+
+    pub(crate) async fn insert_bundle(
+        &self,
+        origin: BundleOrigin,
+        items: Vec<BundleItemInput>,
+        context: Option<String>,
+        operation_metadata: Option<JsonValue>,
+    ) -> Result<BundleReference, String> {
+        self.bundle_store
+            .lock()
+            .await
+            .insert(origin, items, context, operation_metadata)
+    }
+
+    pub(crate) async fn bundle_snapshot(
+        &self,
+        reference: &BundleReference,
+    ) -> Result<BundleSnapshot, String> {
+        self.bundle_store.lock().await.snapshot(reference)
     }
 
     pub(crate) async fn execute(
@@ -252,6 +282,7 @@ impl CodeModeService {
 }
 
 pub(super) async fn handle_runtime_response(
+    exec: &ExecContext,
     model_info: &codex_protocol::openai_models::ModelInfo,
     response: RuntimeResponse,
     max_output_tokens: Option<usize>,
@@ -264,14 +295,24 @@ pub(super) async fn handle_runtime_response(
         RuntimeResponse::Yielded { content_items, .. } => {
             let mut content_items = into_function_call_output_content_items(content_items);
             sanitize_image_detail_items(supports_original, &mut content_items);
-            content_items = truncate_code_mode_result(content_items, max_output_tokens);
+            content_items = bundle_truncation::truncate_code_mode_result_with_bundle(
+                exec,
+                content_items,
+                max_output_tokens,
+            )
+            .await;
             prepend_script_status(&mut content_items, &script_status, wall_time);
             Ok(FunctionToolOutput::from_content(content_items, Some(true)))
         }
         RuntimeResponse::Terminated { content_items, .. } => {
             let mut content_items = into_function_call_output_content_items(content_items);
             sanitize_image_detail_items(supports_original, &mut content_items);
-            content_items = truncate_code_mode_result(content_items, max_output_tokens);
+            content_items = bundle_truncation::truncate_code_mode_result_with_bundle(
+                exec,
+                content_items,
+                max_output_tokens,
+            )
+            .await;
             prepend_script_status(&mut content_items, &script_status, wall_time);
             Ok(FunctionToolOutput::from_content(content_items, Some(true)))
         }
@@ -288,7 +329,12 @@ pub(super) async fn handle_runtime_response(
                     text: format!("Script error:\n{error_text}"),
                 });
             }
-            content_items = truncate_code_mode_result(content_items, max_output_tokens);
+            content_items = bundle_truncation::truncate_code_mode_result_with_bundle(
+                exec,
+                content_items,
+                max_output_tokens,
+            )
+            .await;
             prepend_script_status(&mut content_items, &script_status, wall_time);
             Ok(FunctionToolOutput::from_content(
                 content_items,
@@ -324,24 +370,6 @@ fn prepend_script_status(
     content_items.insert(0, FunctionCallOutputContentItem::InputText { text: header });
 }
 
-fn truncate_code_mode_result(
-    items: Vec<FunctionCallOutputContentItem>,
-    max_output_tokens: Option<usize>,
-) -> Vec<FunctionCallOutputContentItem> {
-    let max_output_tokens = resolve_max_tokens(max_output_tokens);
-    let policy = TruncationPolicy::Tokens(max_output_tokens);
-    if items
-        .iter()
-        .all(|item| matches!(item, FunctionCallOutputContentItem::InputText { .. }))
-    {
-        let (truncated_items, _) =
-            formatted_truncate_text_content_items_with_policy(&items, policy);
-        return truncated_items;
-    }
-
-    truncate_function_output_items_with_policy(&items, policy, estimate_audio_token_count)
-}
-
 // Submit synchronously so the recorder sees the call before the cell's dispatch gate closes.
 fn submit_nested_tool(
     session: Arc<Session>,
@@ -350,10 +378,7 @@ fn submit_nested_tool(
     invocation: CodeModeNestedToolCall,
     call_id: String,
     cancellation_token: CancellationToken,
-) -> Result<
-    impl std::future::Future<Output = Result<JsonValue, FunctionCallError>> + Send + 'static,
-    FunctionCallError,
-> {
+) -> Result<NestedToolFuture, FunctionCallError> {
     let CodeModeNestedToolCall {
         cell_id,
         runtime_tool_call_id,
@@ -361,6 +386,15 @@ fn submit_nested_tool(
         tool_kind,
         input,
     } = invocation;
+    if bundle_handler::is_bundle_tool_name(&tool_name) {
+        let exec = ExecContext {
+            session,
+            turn: Arc::clone(&step_context.turn),
+        };
+        return Ok(Box::pin(async move {
+            bundle_handler::handle_bundle_call(&exec, input, cancellation_token).await
+        }));
+    }
     let thread_id = session.thread_id;
     let turn_id = step_context.turn.sub_id.clone();
     let tool_name = tool_name.with_default_namespace();
@@ -419,7 +453,9 @@ fn submit_nested_tool(
         },
         cancellation_token,
     );
-    Ok(async move { Ok(result.await?.code_mode_result()) })
+    Ok(Box::pin(
+        async move { Ok(result.await?.code_mode_result()) },
+    ))
 }
 
 fn build_nested_tool_payload(
@@ -471,13 +507,16 @@ mod tests {
     use std::sync::Arc;
 
     use super::build_nested_tool_payload;
-    use super::truncate_code_mode_result;
+    use super::bundle_truncation::bundle_aware_truncation;
+    use super::bundle_truncation::truncate_code_mode_result;
     use crate::session::step_context::StepContext;
     use crate::session::tests::make_session_and_context;
     use crate::tools::context::ToolPayload;
     use crate::tools::registry::ToolRegistry;
     use crate::tools::router::ToolRouter;
     use crate::turn_diff_tracker::TurnDiffTracker;
+    use codex_code_mode::BundleItemInput;
+    use codex_code_mode::BundleRange;
     use codex_code_mode::CodeModeToolKind;
     use codex_protocol::models::FunctionCallOutputContentItem;
     use codex_protocol::openai_models::ToolMode;
@@ -554,7 +593,7 @@ mod tests {
         }];
 
         assert_eq!(
-            truncate_code_mode_result(items, Some(5)),
+            truncate_code_mode_result(&items, /*max_output_tokens*/ Some(5)),
             vec![FunctionCallOutputContentItem::InputText {
                 text: concat!(
                     "Warning: truncated output (original token count: 10)\n",
@@ -567,13 +606,51 @@ mod tests {
     }
 
     #[test]
+    fn bundle_aware_truncation_maps_omissions_to_original_text_items() {
+        let items = vec![
+            FunctionCallOutputContentItem::InputText {
+                text: String::new(),
+            },
+            FunctionCallOutputContentItem::InputText {
+                text: "0123456789012345678901234567890123456789".to_string(),
+            },
+        ];
+
+        let result = bundle_aware_truncation(items, /*max_output_tokens*/ Some(5));
+
+        assert_eq!(result.omitted_chars, 20);
+        assert_eq!(
+            result.bundle_items,
+            vec![
+                BundleItemInput::new("text-1", ""),
+                BundleItemInput::new("text-2", "0123456789012345678901234567890123456789")
+                    .with_omitted_ranges(vec![BundleRange::new(
+                        /*start_char*/ 10, /*end_char*/ 30,
+                    )]),
+            ]
+        );
+    }
+
+    #[test]
+    fn audio_only_truncation_does_not_create_an_empty_text_bundle() {
+        let items = vec![FunctionCallOutputContentItem::InputAudio {
+            audio_url: format!("data:audio/wav;base64,{}", "A".repeat(100)),
+        }];
+
+        let result = bundle_aware_truncation(items, /*max_output_tokens*/ Some(5));
+
+        assert_eq!(result.omitted_chars, 0);
+        assert!(result.bundle_items.is_empty());
+    }
+
+    #[test]
     fn over_budget_audio_output_is_omitted() {
         let items = vec![FunctionCallOutputContentItem::InputAudio {
             audio_url: format!("data:audio/wav;base64,{}", "A".repeat(100)),
         }];
 
         assert_eq!(
-            truncate_code_mode_result(items, Some(5)),
+            truncate_code_mode_result(&items, /*max_output_tokens*/ Some(5)),
             vec![FunctionCallOutputContentItem::InputText {
                 text: "[omitted 1 audio items ...]".to_string(),
             }]

@@ -30,7 +30,7 @@ use tokio::time::sleep;
 const COLLABORATION_NAMESPACE: &str = "collaboration";
 const SPAWN_CALL_ID: &str = "spawn-worker";
 const NESTED_CALL_ID: &str = "spawn-grandchild";
-const QUEUE_CALL_ID: &str = "queue-worker-message";
+const SEND_MESSAGE_CALL_ID: &str = "send-worker-message";
 const FOLLOWUP_CALL_ID: &str = "followup-worker";
 const SIBLING_SPAWN_CALL_ID: &str = "spawn-survivor";
 const SIBLING_FOLLOWUP_CALL_ID: &str = "followup-survivor";
@@ -38,8 +38,8 @@ const INTERRUPT_CALL_ID: &str = "interrupt-worker";
 const INITIAL_PROMPT: &str = "spawn a durable worker";
 const INITIAL_TASK: &str = "inspect the repository";
 const NESTED_TASK: &str = "inspect the nested repository";
-const QUEUE_PROMPT: &str = "queue context for the durable worker";
-const QUEUED_MESSAGE: &str = "queue-only context from an earlier parent turn";
+const MESSAGE_PROMPT: &str = "send context to the durable worker";
+const SENT_MESSAGE: &str = "context from an earlier parent turn";
 const FOLLOWUP_PROMPT: &str = "continue the durable worker";
 const FOLLOWUP_TASK: &str = "inspect the tests too";
 const SIBLING_PROMPT: &str = "spawn a second durable worker";
@@ -217,7 +217,7 @@ async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Resu
         sse(vec![ev_completed("resp-parent-turn-assistant")]),
     )
     .await;
-    for (text, is_subagent) in [(NESTED_CALL_ID, true), (QUEUE_CALL_ID, false)] {
+    for (text, is_subagent) in [(NESTED_CALL_ID, true), (SEND_MESSAGE_CALL_ID, false)] {
         mount_sse_once_match(
             &server,
             move |request: &wiremock::Request| {
@@ -334,12 +334,10 @@ async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Resu
         &sibling_spawn_args,
     )
     .await;
-    mount_sse_once_match(
+    let sibling_request = mount_sse_once_match(
         &server,
         |request: &wiremock::Request| {
-            request_has_model(request, ROLE_MODEL)
-                && request_has_input_type(request, "agent_message")
-                && body_contains(request, SIBLING_TASK)
+            request_has_model(request, ROLE_MODEL) && body_contains(request, SIBLING_TASK)
         },
         sse(vec![
             ev_response_created("resp-survivor-1"),
@@ -352,13 +350,27 @@ async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Resu
 
     let grandchild = nested_mock.last_request().expect("grandchild").body_json();
     let nested_id = &grandchild["client_metadata"]["thread_id"];
-    let sibling_thread_id = initial
-        .thread_manager
-        .list_thread_ids()
-        .await
-        .into_iter()
-        .find(|id| ![root_thread_id, worker_thread_id].contains(id) && &json!(id) != nested_id)
-        .ok_or_else(|| anyhow::anyhow!("spawned sibling should be registered"))?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let sibling_thread_id = loop {
+        if let Some(thread_id) = sibling_request.requests().into_iter().find_map(|request| {
+            let body = request.body_json();
+            if body["client_metadata"]["x-codex-parent-thread-id"] != json!(root_thread_id)
+                || !request.body_contains_text(SIBLING_TASK)
+            {
+                return None;
+            }
+            body["client_metadata"]["thread_id"]
+                .as_str()
+                .and_then(|thread_id| codex_protocol::ThreadId::from_string(thread_id).ok())
+        }) {
+            break thread_id;
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for spawned sibling");
+        }
+        sleep(Duration::from_millis(10)).await;
+    };
+    assert_ne!(&json!(sibling_thread_id), nested_id);
     let sibling_thread = initial.thread_manager.get_thread(sibling_thread_id).await?;
     wait_for_event(sibling_thread.as_ref(), |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -397,7 +409,7 @@ async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Resu
             request_has_model(request, ROLE_MODEL)
                 && request_has_input_type(request, "agent_message")
                 && body_contains(request, FOLLOWUP_TASK)
-                && body_contains(request, QUEUED_MESSAGE)
+                && body_contains(request, SENT_MESSAGE)
         },
         sse(vec![
             ev_response_created("resp-worker-2"),
@@ -481,36 +493,91 @@ openai_base_url = "{redirected_base_url}"
 
     mount_sse_once_match(
         &server,
-        |request: &wiremock::Request| body_contains(request, QUEUE_PROMPT),
+        |request: &wiremock::Request| body_contains(request, MESSAGE_PROMPT),
         sse(vec![
             ev_response_created("resp-queue"),
             ev_function_call_with_namespace(
-                QUEUE_CALL_ID,
+                SEND_MESSAGE_CALL_ID,
                 COLLABORATION_NAMESPACE,
                 "send_message",
-                r#"{"target":"worker","message":"queue-only context from an earlier parent turn"}"#,
+                r#"{"target":"worker","message":"context from an earlier parent turn"}"#,
             ),
             ev_completed("resp-queue"),
         ]),
     )
     .await;
-    resumed.submit_turn(QUEUE_PROMPT).await?;
+    let sent_message_child_request = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            request_has_model(request, ROLE_MODEL)
+                && request_has_input_type(request, "agent_message")
+                && body_contains(request, SENT_MESSAGE)
+                && !body_contains(request, FOLLOWUP_TASK)
+        },
+        sse(vec![
+            ev_response_created("resp-worker-message"),
+            ev_assistant_message("msg-worker-message", "context received"),
+            ev_completed("resp-worker-message"),
+        ]),
+    )
+    .await;
+    let sent_message_parent_wake = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            body_contains(request, "Sender: /root/worker")
+                && body_contains(request, "context received")
+        },
+        sse(vec![
+            ev_response_created("resp-parent-message-complete"),
+            ev_assistant_message("msg-parent-message-complete", "message result received"),
+            ev_completed("resp-parent-message-complete"),
+        ]),
+    )
+    .await;
+    let followup_parent_wake = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            body_contains(request, "Sender: /root/worker")
+                && body_contains(request, "follow-up complete")
+        },
+        sse(vec![
+            ev_response_created("resp-parent-followup-complete"),
+            ev_assistant_message("msg-parent-followup-complete", "follow-up result received"),
+            ev_completed("resp-parent-followup-complete"),
+        ]),
+    )
+    .await;
+    resumed.submit_turn(MESSAGE_PROMPT).await?;
 
     let reloaded_worker = resumed
         .thread_manager
         .get_thread(worker_thread_id)
         .await
-        .expect("queued message should lazily reload the original worker");
+        .expect("message should lazily reload the original worker");
     assert_eq!(
         reloaded_worker.config().await.model_provider,
         resumed.codex.config().await.model_provider,
         "cold reload must preserve the parent's complete model provider",
     );
+    wait_for_event(reloaded_worker.as_ref(), |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    wait_for_event(&resumed.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert!(!sent_message_parent_wake.requests().is_empty());
     resumed.submit_turn(FOLLOWUP_PROMPT).await?;
     wait_for_event(reloaded_worker.as_ref(), |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
+    wait_for_event(&resumed.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert!(!followup_parent_wake.requests().is_empty());
     assert!(followup_child_request.requests().iter().any(|request| {
         request.body_contains_text(FOLLOWUP_TASK)
             && request.body_contains_text(ROLE_DEVELOPER_INSTRUCTIONS)
@@ -548,9 +615,9 @@ openai_base_url = "{redirected_base_url}"
         .received_requests()
         .await
         .expect("captured response requests");
-    assert!(!followup_child_request.requests().iter().any(|request| {
+    assert!(sent_message_child_request.requests().iter().any(|request| {
         request.body_json()["client_metadata"]["thread_id"] == json!(worker_thread_id)
-            && request.body_contains_text(QUEUED_MESSAGE)
+            && request.body_contains_text(SENT_MESSAGE)
             && !request.body_contains_text(FOLLOWUP_TASK)
     }));
     let body_for = |text: &str, thread: codex_protocol::ThreadId| {
@@ -565,11 +632,11 @@ openai_base_url = "{redirected_base_url}"
             .expect("matching model request for expected thread")
     };
     let initial_root = body_for(INITIAL_PROMPT, root_thread_id);
-    let queue_root = body_for(QUEUE_PROMPT, root_thread_id);
+    let message_root = body_for(MESSAGE_PROMPT, root_thread_id);
     let followup_root = body_for(FOLLOWUP_PROMPT, root_thread_id);
     let initial_child = body_for(INITIAL_TASK, worker_thread_id);
     let followup_child = body_for(FOLLOWUP_TASK, worker_thread_id);
-    let roster = queue_root["input"]
+    let roster = message_root["input"]
         .as_array()
         .into_iter()
         .flatten()
@@ -584,20 +651,20 @@ openai_base_url = "{redirected_base_url}"
     let initial_parent = initial_root["client_metadata"]["turn_id"]
         .as_str()
         .expect("initial parent turn");
-    let queue_parent = queue_root["client_metadata"]["turn_id"]
+    let message_parent = message_root["client_metadata"]["turn_id"]
         .as_str()
-        .expect("queue-only parent turn");
+        .expect("message parent turn");
     let followup_parent = followup_root["client_metadata"]["turn_id"]
         .as_str()
         .expect("follow-up parent turn");
     assert_ne!(followup_parent, initial_parent);
-    assert_ne!(followup_parent, queue_parent);
+    assert_ne!(followup_parent, message_parent);
     let nested_parent = initial_child["client_metadata"]["turn_id"]
         .as_str()
         .expect("nested worker parent turn");
     for (body, parent_thread, parent_turn) in [
         (&initial_root, None, None),
-        (&queue_root, None, None),
+        (&message_root, None, None),
         (&followup_root, None, None),
         (&initial_child, Some(root_thread_id), Some(initial_parent)),
         (&followup_child, Some(root_thread_id), Some(followup_parent)),
@@ -613,7 +680,7 @@ openai_base_url = "{redirected_base_url}"
     }
     for (body, root_turn) in [
         (&initial_root, initial_parent),
-        (&queue_root, queue_parent),
+        (&message_root, message_parent),
         (&followup_root, followup_parent),
         (&initial_child, initial_parent),
         (&followup_child, followup_parent),

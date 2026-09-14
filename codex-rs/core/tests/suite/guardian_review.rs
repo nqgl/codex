@@ -2138,7 +2138,7 @@ async fn guardian_denial_rejects_tool_call_with_rationale(
         "Guardian rationale missing from rejected tool output: {tool_output}"
     );
     assert_eq!(
-        tool_output.contains("The agent must not attempt to achieve the same outcome"),
+        tool_output.contains("Reaching the same outcome via workaround"),
         rejection_instructions.is_none(),
         "legacy rejection instructions should only be used when absent: {tool_output}"
     );

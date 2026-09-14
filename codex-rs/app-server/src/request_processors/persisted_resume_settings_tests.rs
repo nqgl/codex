@@ -41,6 +41,8 @@ fn settings_item(
                 cwd: cwd(),
                 runtime_workspace_roots: None,
                 reasoning_effort: None,
+                multi_agent_mode: Default::default(),
+                multi_agent_max_concurrent_threads: Some(4),
                 reasoning_summary: None,
                 personality: None,
                 collaboration_mode: CollaborationMode {

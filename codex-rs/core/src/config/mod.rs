@@ -73,6 +73,7 @@ use codex_features::FeatureOverrides;
 use codex_features::FeatureToml;
 use codex_features::Features;
 use codex_features::FeaturesToml;
+use codex_features::MultiAgentModeConfig;
 use codex_features::MultiAgentV2ConfigToml;
 use codex_features::NetworkProxyConfigToml;
 use codex_features::SleepToolMode;
@@ -99,6 +100,7 @@ use codex_models_manager::ModelsManagerConfig;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::config_types::ForcedLoginMethod;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -1286,6 +1288,7 @@ pub struct MultiAgentV2Config {
     pub subagent_usage_hint_text: Option<String>,
     pub subagent_developer_instructions: Option<String>,
     pub multi_agent_mode_hint_text: Option<String>,
+    pub mode: Option<MultiAgentMode>,
     pub tool_namespace: Option<String>,
     pub hide_spawn_agent_metadata: bool,
     pub expose_spawn_agent_model_overrides: bool,
@@ -1305,6 +1308,7 @@ impl MultiAgentV2Config {
             subagent_usage_hint_text: None,
             subagent_developer_instructions: None,
             multi_agent_mode_hint_text: None,
+            mode: None,
             tool_namespace: Some(DEFAULT_MULTI_AGENT_V2_TOOL_NAMESPACE.to_string()),
             hide_spawn_agent_metadata: true,
             expose_spawn_agent_model_overrides: true,
@@ -2732,6 +2736,10 @@ fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config
         .and_then(|config| config.multi_agent_mode_hint_text.as_ref())
         .cloned()
         .or(default.multi_agent_mode_hint_text);
+    let mode = base.and_then(|config| config.mode).map(|mode| match mode {
+        MultiAgentModeConfig::ExplicitRequestOnly => MultiAgentMode::ExplicitRequestOnly,
+        MultiAgentModeConfig::Proactive => MultiAgentMode::Proactive,
+    });
     let tool_namespace = base
         .and_then(|config| config.tool_namespace.as_ref())
         .cloned()
@@ -2750,6 +2758,7 @@ fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config
         subagent_usage_hint_text,
         subagent_developer_instructions,
         multi_agent_mode_hint_text,
+        mode,
         tool_namespace,
         hide_spawn_agent_metadata,
         expose_spawn_agent_model_overrides,

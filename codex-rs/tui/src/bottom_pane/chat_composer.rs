@@ -423,6 +423,7 @@ fn parent_owned_command_is_allowed(command: SlashCommand, args: &str) -> bool {
                 | SlashCommand::App
                 | SlashCommand::Side
                 | SlashCommand::Btw
+                | SlashCommand::Agent
                 | SlashCommand::Agents
                 | SlashCommand::MultiAgents
                 | SlashCommand::Vim
@@ -435,6 +436,7 @@ fn parent_owned_command_is_allowed(command: SlashCommand, args: &str) -> bool {
                 | SlashCommand::Logout
                 | SlashCommand::Copy
                 | SlashCommand::Raw
+                | SlashCommand::Math
                 | SlashCommand::Diff
                 | SlashCommand::Mention
                 | SlashCommand::Skills
@@ -528,6 +530,7 @@ pub(crate) struct ChatComposer {
     history: ChatComposerHistory,
     agents_navigation_enabled: bool,
     footer: FooterState,
+    dictation_preview: super::dictation_preview::DictationPreview,
     has_focus: bool,
     frame_requester: Option<FrameRequester>,
     effort_tier: Option<EffortTier>,
@@ -696,6 +699,7 @@ impl ChatComposer {
                 reasoning_up_key: default_keymap
                     .primary_hint(KeymapContext::Chat, "increase_reasoning_effort"),
             },
+            dictation_preview: Default::default(),
             has_focus: has_input_focus,
             frame_requester: None,
             effort_tier: None,
@@ -1027,7 +1031,7 @@ impl ChatComposer {
     pub fn set_windows_degraded_sandbox_active(&mut self, enabled: bool) {
         self.windows_degraded_sandbox_active = enabled;
     }
-    fn layout_areas(&self, area: Rect) -> [Rect; 4] {
+    fn layout_areas(&self, area: Rect) -> [Rect; 5] {
         self.layout_areas_with_textarea_right_reserve(area, /*textarea_right_reserve*/ 0)
     }
 
@@ -1035,7 +1039,7 @@ impl ChatComposer {
         &self,
         area: Rect,
         textarea_right_reserve: u16,
-    ) -> [Rect; 4] {
+    ) -> [Rect; 5] {
         let footer_props = self.footer_props();
         let footer_hint_height = self
             .custom_footer_height()
@@ -1074,7 +1078,27 @@ impl ChatComposer {
         };
         textarea_rect.y = textarea_rect.y.saturating_add(consumed);
         textarea_rect.height = textarea_rect.height.saturating_sub(consumed);
-        [composer_rect, remote_images_rect, textarea_rect, popup_rect]
+        let dictation_preview_height = self
+            .dictation_preview
+            .desired_height(textarea_rect.width)
+            .min(textarea_rect.height.saturating_sub(1));
+        let dictation_preview_separator = u16::from(dictation_preview_height > 0);
+        let consumed = dictation_preview_height.saturating_add(dictation_preview_separator);
+        let dictation_preview_rect = Rect {
+            x: textarea_rect.x,
+            y: textarea_rect.y,
+            width: textarea_rect.width,
+            height: dictation_preview_height,
+        };
+        textarea_rect.y = textarea_rect.y.saturating_add(consumed);
+        textarea_rect.height = textarea_rect.height.saturating_sub(consumed);
+        [
+            composer_rect,
+            remote_images_rect,
+            dictation_preview_rect,
+            textarea_rect,
+            popup_rect,
+        ]
     }
 
     fn footer_spacing(footer_hint_height: u16) -> u16 {
@@ -1105,7 +1129,7 @@ impl ChatComposer {
             return Some(pos);
         }
 
-        let [_, _, textarea_rect, _] =
+        let [_, _, _, textarea_rect, _] =
             self.layout_areas_with_textarea_right_reserve(area, textarea_right_reserve);
         let state = *self.draft.textarea_state.borrow();
         self.draft
@@ -2018,6 +2042,39 @@ impl ChatComposer {
         if started_vim_edit {
             self.finish_vim_edit();
         }
+    }
+
+    pub(crate) fn insert_dictation(&mut self, transcript: &str) {
+        let transcript = transcript.trim();
+        if transcript.is_empty() {
+            return;
+        }
+
+        let cursor = self.draft.textarea.cursor();
+        let text = self.draft.textarea.text();
+        let needs_leading_space = text[..cursor]
+            .chars()
+            .next_back()
+            .is_some_and(|character| !character.is_whitespace());
+        let needs_trailing_space = text[cursor..]
+            .chars()
+            .next()
+            .is_some_and(|character| !character.is_whitespace());
+        let insertion = format!(
+            "{}{}{}",
+            if needs_leading_space { " " } else { "" },
+            transcript,
+            if needs_trailing_space { " " } else { "" },
+        );
+        self.insert_str(&insertion);
+    }
+
+    pub(crate) fn set_dictation_preview(&mut self, completed: &str, partial: &str) {
+        self.dictation_preview.set(completed, partial);
+    }
+
+    pub(crate) fn clear_dictation_preview(&mut self) {
+        self.dictation_preview.clear();
     }
 
     /// Handle a key event coming from the main UI.
@@ -4675,9 +4732,13 @@ impl ChatComposer {
             .try_into()
             .unwrap_or(u16::MAX);
         let remote_images_separator = u16::from(remote_images_height > 0);
+        let dictation_preview_height = self.dictation_preview.desired_height(inner_width);
+        let dictation_preview_separator = u16::from(dictation_preview_height > 0);
         self.draft.textarea.desired_height(inner_width)
             + remote_images_height
             + remote_images_separator
+            + dictation_preview_height
+            + dictation_preview_separator
             + 2
             + if self.voice_strip.is_some() { 3 } else { 0 }
             + self
@@ -4701,8 +4762,13 @@ impl ChatComposer {
         mask_char: Option<char>,
         textarea_right_reserve: u16,
     ) {
-        let [composer_rect, remote_images_rect, textarea_rect, popup_rect] =
-            self.layout_areas_with_textarea_right_reserve(area, textarea_right_reserve);
+        let [
+            composer_rect,
+            remote_images_rect,
+            dictation_preview_rect,
+            textarea_rect,
+            popup_rect,
+        ] = self.layout_areas_with_textarea_right_reserve(area, textarea_right_reserve);
         match &self.popups.active {
             ActivePopup::Command(popup) => {
                 popup.render_ref(popup_rect, buf);
@@ -4971,6 +5037,7 @@ impl ChatComposer {
                 .style(style)
                 .render(remote_images_rect, buf);
         }
+        self.dictation_preview.render(dictation_preview_rect, buf);
         if !textarea_rect.is_empty() {
             let prompt = if self.draft.input_enabled {
                 if self.draft.is_bash_mode {

@@ -247,6 +247,8 @@ mod composer_submission;
 mod computer_activity_tests;
 #[path = "tests/config_errors_tests.rs"]
 mod config_errors;
+mod dictation;
+mod directory_watch;
 mod exec_flow;
 mod goal_menu;
 mod goal_validation;
@@ -258,6 +260,7 @@ mod luna_reserve_usage_tests;
 mod mcp_startup;
 #[path = "tests/misalignment_policy_tests.rs"]
 mod misalignment_policy;
+mod monitor;
 #[path = "tests/permission_shortcuts_tests.rs"]
 mod permission_shortcuts_tests;
 mod permissions;

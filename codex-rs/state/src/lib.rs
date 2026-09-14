@@ -63,6 +63,7 @@ pub use model::ThreadGoal;
 pub use model::ThreadGoalStatus;
 pub use model::ThreadMetadata;
 pub use model::ThreadMetadataBuilder;
+pub use model::ThreadMonitor;
 pub use model::ThreadRelationFilter;
 pub use model::ThreadSection;
 pub use model::ThreadSectionAppearance;

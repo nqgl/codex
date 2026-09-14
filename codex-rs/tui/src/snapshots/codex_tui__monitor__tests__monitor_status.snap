@@ -1,0 +1,22 @@
+---
+source: tui/src/monitor_tests.rs
+expression: "format!(\"{message}\\n\\n{}\", hint.expect(\"status hint\"))"
+---
+Command monitors (2):
+- project-watch (running, trusted output) in /workspace/project: ./watch-for-changes
+- ci (paused) in /workspace/project: gh pr checks --watch
+
+Monitor commands:
+  /monitor add <name> [--cwd <directory>] [--trust] -- <command>
+  /monitor list
+  /monitor pause <name>
+  /monitor resume <name>
+  /monitor remove <name>
+
+Options for add:
+  --cwd <directory>  Run the command from this directory (defaults to the session cwd)
+  --trust            Deliver output without the untrusted-input warning
+  --                 End monitor options and begin the command
+
+Example:
+  /monitor add project-watch --cwd ~/project --trust -- ./watch-for-changes

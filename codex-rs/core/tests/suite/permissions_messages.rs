@@ -208,7 +208,7 @@ async fn catalog_non_on_request_approval_messages_are_sent_in_initial_permission
                 unless_trusted: None,
             },
             "catalog never approval instructions",
-            "Approval policy is currently never",
+            "Approval policy is currently `never`",
         ),
         (
             AskForApproval::UnlessTrusted,
@@ -333,7 +333,7 @@ async fn catalog_permission_message_is_sent_initially_and_after_model_change() -
     assert!(
         permissions
             .last()
-            .is_some_and(|text| text.contains("Approval policy is currently never"))
+            .is_some_and(|text| text.contains("Approval policy is currently `never`"))
     );
     assert!(
         !permissions
@@ -380,7 +380,7 @@ async fn empty_catalog_permission_message_preserves_approval_instructions() -> R
 
     let permissions = permissions_texts(&req.single_request());
     assert_eq!(permissions.len(), 1);
-    assert!(permissions[0].contains("Approval policy is currently never"));
+    assert!(permissions[0].contains("Approval policy is currently `never`"));
     assert!(!permissions[0].contains("Filesystem sandboxing defines"));
     assert!(!permissions[0].contains("`sandbox_mode`"));
     Ok(())

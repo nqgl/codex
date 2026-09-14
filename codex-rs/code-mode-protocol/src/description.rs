@@ -24,6 +24,21 @@ const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run JavaScript code to orchestrate/co
 - `max_output_tokens` sets the token budget for direct `exec` results. Defaults to 10000 tokens.
 - When the JS code is fully evaluated, the isolate's lifetime ends and unawaited promises are silently discarded.
 
+- Within each bounded stage, run independent, non-conflicting nested tool calls concurrently in this one `exec` cell. Do not split otherwise batchable inspections across outer `exec` calls.
+- Use `await Promise.allSettled([...])` when partial results are useful, and inspect every outcome. Use `await Promise.all([...])` only when any failure should abort the stage.
+- Keep dependent or adaptive calls, approvals, waits/resumes, and conflicting or interdependent mutations sequential.
+- Bound fanout and combined output; narrow calls or retain/query large results with bundles. Do not add work merely to fill a batch.
+- Example:
+```js
+const results = await Promise.allSettled([
+  tools.exec_command({cmd: 'rg -n "needle_a" src', max_output_tokens: 2000}),
+  tools.exec_command({cmd: 'rg -n "needle_b" tests', max_output_tokens: 2000}),
+]);
+for (const result of results) {
+  text(result.status === "fulfilled" ? result.value : String(result.reason));
+}
+```
+
 - Global helpers:
 - `exit()`: Immediately ends the current script successfully (like an early return from the top level).
 - `text(value: string | number | boolean | undefined | null)`: Appends a text item. Non-string values are stringified with `JSON.stringify(...)` when possible.
@@ -32,6 +47,9 @@ const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run JavaScript code to orchestrate/co
 - `generatedImage(result: { image_url: string; output_hint?: string })`: Appends an image-generation result and its optional output hint. HTTP(S) URLs are not supported.
 - `store(key: string, value: any)`: stores a serializable value under a string key for later `exec` calls in the same session.
 - `load(key: string)`: returns the stored value for a string key, or `undefined` if it is missing.
+- `bundles.create(value)`: asynchronously stores a bounded, session-scoped snapshot without adding its contents to model context and returns a `Bundle`. `bundles.open(id)` reopens an existing bundle.
+- Bundle helpers: `select(...names)` narrows items; `omitted()` selects only ranges omitted by output truncation; `info()`, `read(item, range)`, and `search(query)` inspect locally. After selecting exactly one item, `read(range)` infers its name. `ask(question)` and `summarize(instructions?)` use a read-only `gpt-5.6-terra` medium query and return an answer plus model/usage/freshness metadata. `each(...names).ask(...)` and `.summarize(...)` run per item and return another `Bundle`.
+- Bundle reads accept `{ startLine, lineCount }`, `{ startChar, charCount }`, or `{ chunk, chunkCount }`. Bundles are immutable snapshots and may be stale. `store` and `load` preserve Bundle values transparently.
 - `notify(value: string | number | boolean | undefined | null)`: immediately injects an extra `custom_tool_call_output` for the current `exec` call. Values are stringified like `text(...)`.
 - `setTimeout(callback: () => void, delayMs?: number)`: schedules a callback to run later and returns a timeout id. Pending timeouts do not keep `exec` alive by themselves; await an explicit promise if you need to wait for one.
 - `clearTimeout(timeoutId?: number)`: cancels a timeout created by `setTimeout`.

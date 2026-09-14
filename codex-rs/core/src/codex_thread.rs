@@ -20,6 +20,7 @@ use codex_otel::current_span_w3c_trace_context;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -94,6 +95,8 @@ pub struct ThreadConfigSnapshot {
     pub profile_workspace_roots: Vec<AbsolutePathBuf>,
     pub ephemeral: bool,
     pub reasoning_effort: Option<ReasoningEffort>,
+    pub multi_agent_mode: MultiAgentMode,
+    pub multi_agent_max_concurrent_threads: usize,
     pub reasoning_summary: Option<ReasoningSummary>,
     pub personality: Option<Personality>,
     pub collaboration_mode: CollaborationMode,
@@ -152,6 +155,8 @@ pub struct CodexThreadSettingsOverrides {
     pub summary: Option<ReasoningSummary>,
     pub service_tier: Option<Option<String>>,
     pub collaboration_mode: Option<CollaborationMode>,
+    pub multi_agent_mode: Option<MultiAgentMode>,
+    pub multi_agent_max_concurrent_threads: Option<usize>,
     pub personality: Option<Personality>,
     pub disabled_plugin_ids: Option<Vec<String>>,
 }
@@ -566,6 +571,8 @@ impl CodexThread {
             summary,
             service_tier,
             collaboration_mode,
+            multi_agent_mode,
+            multi_agent_max_concurrent_threads,
             personality,
             disabled_plugin_ids,
         } = overrides;
@@ -587,6 +594,8 @@ impl CodexThread {
             permission_profile,
             active_permission_profile,
             windows_sandbox_level,
+            multi_agent_mode,
+            multi_agent_max_concurrent_threads,
             disabled_plugin_ids,
             ..Default::default()
         }

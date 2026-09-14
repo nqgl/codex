@@ -1,0 +1,17 @@
+---
+source: tui/src/chatwidget/tests/popups_and_settings.rs
+expression: popup
+---
+  Agent Delegation
+  Applies to this session only; config.toml is unchanged.
+
+› 1. Explicit requests only (current)  Delegate only when you explicitly
+                                       request sub-agents.
+  2. Balanced                          Use a focused sub-agent for clearly
+                                       independent, worthwhile work.
+  3. Proactive                         Let Codex delegate when it judges
+                                       parallel work useful.
+  4. Concurrency cap: 4                Choose how many agents may be resident
+                                       at once, including the primary.
+
+  Press enter to confirm or esc to go back

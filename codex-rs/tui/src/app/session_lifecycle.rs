@@ -71,9 +71,10 @@ impl App {
                     .await;
             }
         }
+        self.sync_active_agent_label();
         let path_backed_threads = self
             .agent_navigation
-            .ordered_path_backed_subagent_threads(self.primary_thread_id);
+            .recently_active_path_backed_subagent_threads(self.primary_thread_id);
         if !path_backed_threads.is_empty() {
             let running_threads: Vec<_> = path_backed_threads
                 .into_iter()
@@ -173,7 +174,7 @@ impl App {
         let mut initial_selected_idx = selected;
         let items: Vec<SelectionItem> = self
             .agent_navigation
-            .ordered_threads()
+            .recently_active_threads(self.primary_thread_id)
             .into_iter()
             .enumerate()
             .map(|(idx, (thread_id, entry))| {
@@ -1059,6 +1060,7 @@ impl App {
             presentation,
         )
         .await?;
+        self.persist_all_monitors().await;
         Ok(())
     }
 
@@ -1286,6 +1288,7 @@ impl App {
         self.local_settings = local_settings;
         self.refresh_server_version_overview_notice(CODEX_CLI_VERSION);
         self.config = resume_config;
+        self.monitors.clear();
         tui.set_notification_settings(
             self.local_settings.tui.notification_settings.method,
             self.local_settings.tui.notification_settings.condition,
@@ -1326,6 +1329,7 @@ impl App {
                 }
                 self.backfill_loaded_subagent_threads(app_server).await;
                 if !read_only {
+                    self.restore_thread_monitors(resumed_thread_id).await;
                     self.replay_agents_overview_requests(app_server, resumed_thread_id)
                         .await;
                 }

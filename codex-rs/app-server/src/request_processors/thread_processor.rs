@@ -21,7 +21,6 @@ use codex_app_server_protocol::ThreadSectionMoveResponse;
 use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ThreadIdleCause;
 use codex_protocol::SanitizedGitUrl;
-use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -1604,7 +1603,8 @@ impl ThreadRequestProcessor {
             sandbox,
             active_permission_profile,
             reasoning_effort: config_snapshot.reasoning_effort,
-            multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
+            multi_agent_mode: config_snapshot.multi_agent_mode,
+            multi_agent_max_concurrent_threads: config_snapshot.multi_agent_max_concurrent_threads,
         };
         let notif = thread_started_notification(thread);
         listener_task_context
@@ -4096,7 +4096,9 @@ impl ThreadRequestProcessor {
                     sandbox,
                     active_permission_profile,
                     reasoning_effort: session_configured.reasoning_effort,
-                    multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
+                    multi_agent_mode: config_snapshot.multi_agent_mode,
+                    multi_agent_max_concurrent_threads: config_snapshot
+                        .multi_agent_max_concurrent_threads,
                     initial_turns_page,
                     turns_backwards_cursor,
                     items_backwards_cursor,
@@ -5289,7 +5291,8 @@ impl ThreadRequestProcessor {
             sandbox,
             active_permission_profile,
             reasoning_effort: session_configured.reasoning_effort,
-            multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
+            multi_agent_mode: config_snapshot.multi_agent_mode,
+            multi_agent_max_concurrent_threads: config_snapshot.multi_agent_max_concurrent_threads,
         };
 
         let notif = thread_started_notification(thread);

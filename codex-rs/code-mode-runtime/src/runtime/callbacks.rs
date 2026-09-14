@@ -1,3 +1,4 @@
+use codex_code_mode_protocol::BUNDLE_TOOL_NAME;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
 
 use super::EXIT_SENTINEL;
@@ -14,7 +15,7 @@ use super::value::v8_value_to_json;
 pub(super) fn tool_callback(
     scope: &mut v8::PinScope<'_, '_>,
     args: v8::FunctionCallbackArguments,
-    mut retval: v8::ReturnValue<v8::Value>,
+    retval: v8::ReturnValue<v8::Value>,
 ) {
     let tool_index = match args.data().to_rust_string_lossy(scope).parse::<usize>() {
         Ok(tool_index) => tool_index,
@@ -36,13 +37,6 @@ pub(super) fn tool_callback(
         }
     };
 
-    let Some(resolver) = v8::PromiseResolver::new(scope) else {
-        throw_type_error(scope, "failed to create tool promise");
-        return;
-    };
-    let promise = resolver.get_promise(scope);
-
-    let resolver = v8::Global::new(scope, resolver);
     let (tool_name, tool_kind) = {
         let Some(state) = scope.get_slot::<RuntimeState>() else {
             throw_type_error(scope, "runtime state unavailable");
@@ -54,7 +48,50 @@ pub(super) fn tool_callback(
         };
         (tool.tool_name.clone(), tool.kind)
     };
+    queue_tool_call(scope, retval, tool_name, tool_kind, input);
+}
 
+pub(super) fn bundle_callback(
+    scope: &mut v8::PinScope<'_, '_>,
+    args: v8::FunctionCallbackArguments,
+    retval: v8::ReturnValue<v8::Value>,
+) {
+    let input = if args.length() == 0 {
+        None
+    } else {
+        match v8_value_to_json(scope, args.get(0)) {
+            Ok(input) => input,
+            Err(error_text) => {
+                throw_type_error(scope, &error_text);
+                return;
+            }
+        }
+    };
+    queue_tool_call(
+        scope,
+        retval,
+        codex_protocol::ToolName {
+            name: BUNDLE_TOOL_NAME.to_string(),
+            namespace: None,
+        },
+        codex_code_mode_protocol::CodeModeToolKind::Function,
+        input,
+    );
+}
+
+fn queue_tool_call(
+    scope: &mut v8::PinScope<'_, '_>,
+    mut retval: v8::ReturnValue<v8::Value>,
+    tool_name: codex_protocol::ToolName,
+    tool_kind: codex_code_mode_protocol::CodeModeToolKind,
+    input: Option<serde_json::Value>,
+) {
+    let Some(resolver) = v8::PromiseResolver::new(scope) else {
+        throw_type_error(scope, "failed to create tool promise");
+        return;
+    };
+    let promise = resolver.get_promise(scope);
+    let resolver = v8::Global::new(scope, resolver);
     let Some(state) = scope.get_slot_mut::<RuntimeState>() else {
         throw_type_error(scope, "runtime state unavailable");
         return;

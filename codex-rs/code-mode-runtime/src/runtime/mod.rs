@@ -1,4 +1,5 @@
 mod audio;
+mod bundle_api;
 mod callbacks;
 mod globals;
 mod module_loader;

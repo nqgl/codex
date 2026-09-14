@@ -6,14 +6,21 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::SessionSource;
 use std::sync::Arc;
-use std::sync::OnceLock;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-#[derive(Default)]
 pub(super) struct AgentExecutionLimiter {
     active: AtomicUsize,
-    max_threads: OnceLock<usize>,
+    max_threads: AtomicUsize,
+}
+
+impl Default for AgentExecutionLimiter {
+    fn default() -> Self {
+        Self {
+            active: AtomicUsize::new(0),
+            max_threads: AtomicUsize::new(usize::MAX),
+        }
+    }
 }
 
 pub(crate) struct AgentExecutionGuard {
@@ -71,11 +78,20 @@ impl AgentControl {
 
 impl AgentExecutionLimiter {
     pub(super) fn initialize(&self, max_threads: usize) {
-        self.max_threads.get_or_init(|| max_threads);
+        let _ = self.max_threads.compare_exchange(
+            usize::MAX,
+            max_threads,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
     }
 
-    fn max_threads(&self) -> usize {
-        self.max_threads.get().copied().unwrap_or(usize::MAX)
+    pub(super) fn set_max_threads(&self, max_threads: usize) {
+        self.max_threads.store(max_threads, Ordering::Release);
+    }
+
+    pub(super) fn max_threads(&self) -> usize {
+        self.max_threads.load(Ordering::Acquire)
     }
 
     fn has_capacity(&self) -> bool {

@@ -2,7 +2,6 @@ use super::*;
 use crate::extensions::send_thread_warning;
 use codex_app_server_protocol::ThreadQueueChangedNotification;
 use codex_extension_api::ThreadIdleCause;
-use codex_protocol::config_types::MultiAgentMode;
 
 #[derive(Clone)]
 pub(super) struct ListenerTaskContext {
@@ -732,6 +731,8 @@ pub(super) async fn handle_pending_thread_resume_request(
         active_permission_profile,
         workspace_roots,
         reasoning_effort,
+        multi_agent_mode,
+        multi_agent_max_concurrent_threads,
         originator,
         ..
     } = config_snapshot;
@@ -755,7 +756,8 @@ pub(super) async fn handle_pending_thread_resume_request(
         sandbox,
         active_permission_profile,
         reasoning_effort,
-        multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
+        multi_agent_mode,
+        multi_agent_max_concurrent_threads,
         initial_turns_page,
         turns_backwards_cursor,
         items_backwards_cursor,

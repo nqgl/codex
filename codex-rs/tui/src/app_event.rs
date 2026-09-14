@@ -36,6 +36,7 @@ use codex_app_server_protocol::SkillsListResponse;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItemsListResponse;
+use codex_app_server_protocol::ThreadRealtimeAudioChunk;
 use codex_connectors::AppInfo;
 use codex_file_search::FileMatch;
 use codex_message_history::HistoryBatchCursor;
@@ -55,13 +56,19 @@ use crate::bottom_pane::TerminalTitleItem;
 use crate::chatwidget::ConnectorScopeGeneration;
 use crate::chatwidget::ThreadUsageOutcome;
 use crate::chatwidget::UserMessage;
+use crate::directory_watch::DirectoryWatchCommand;
+use crate::directory_watch::DirectoryWatchNotification;
 use crate::experimental_features::FeatureWriteResult;
 use crate::goal_files::GoalDraft;
+use crate::monitor::MonitorCommand;
+use crate::monitor::MonitorExit;
+use crate::monitor::MonitorNotification;
 use codex_app_server_protocol::AskForApproval;
 use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
 use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::config_types::CollaborationModeMask;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_realtime_webrtc::StartedRealtimeWebrtcSession;
 
@@ -269,6 +276,16 @@ pub(crate) struct AgentsOverviewThreadRefresh {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, IntoStaticStr)]
 pub(crate) enum AppEvent {
+    /// Start, inspect, or stop the user-controlled directory watcher.
+    DirectoryWatchCommand(DirectoryWatchCommand),
+    /// Deliver a bounded batch from the active directory watcher.
+    DirectoryWatchChanged(DirectoryWatchNotification),
+    /// Start, inspect, pause, resume, or remove a user-controlled command monitor.
+    MonitorCommand(MonitorCommand),
+    /// Deliver one bounded output batch from a running command monitor.
+    MonitorOutput(MonitorNotification),
+    /// Mark a command monitor as exited.
+    MonitorExited(MonitorExit),
     ReviewMisalignment(Arc<crate::chatwidget::MisalignmentReview>),
     ContinueMisalignment(Arc<crate::chatwidget::MisalignmentReview>),
     CloseMisalignmentReview,
@@ -543,6 +560,14 @@ pub(crate) enum AppEvent {
         enabled: bool,
     },
 
+    /// A local math image is ready; replay source-backed transcript cells.
+    MathRendered,
+
+    /// Toggle or explicitly set the session-only inter-agent message feed.
+    SetAgentMessageFeed {
+        enabled: Option<bool>,
+    },
+
     /// Clear the current context, start a fresh session, and submit an initial user message.
     ///
     /// This is the Plan Mode handoff path: the previous thread remains resumable, but the model
@@ -602,6 +627,21 @@ pub(crate) enum AppEvent {
     /// Forward a command to the Agent. Using an `AppEvent` for this avoids
     /// bubbling channels through layers of widgets.
     CodexOp(AppCommand),
+
+    /// Route captured microphone audio through the active dictation state before submission.
+    DictationAudio {
+        generation: u64,
+        frame: ThreadRealtimeAudioChunk,
+    },
+    /// Commit after the last queued microphone frame and padding have been delivered.
+    DictationCommit {
+        generation: u64,
+    },
+
+    /// Finish the matching push-to-talk recording after late transcription deltas have arrived.
+    DictationFinalize {
+        generation: u64,
+    },
 
     /// Approve one retry of a recent auto-review denial selected in the TUI.
     ApproveRecentAutoReviewDenial {
@@ -1136,6 +1176,15 @@ pub(crate) enum AppEvent {
     StopRealtimeConversation {
         thread_id: ThreadId,
     },
+
+    /// Update when Codex may delegate work for the current TUI session.
+    SetMultiAgentMode(MultiAgentMode),
+
+    /// Open the session-local multi-agent concurrency picker.
+    OpenMultiAgentConcurrencyPopup,
+
+    /// Update the multi-agent concurrency cap for the current TUI session.
+    SetMultiAgentMaxConcurrentThreads(usize),
 
     /// Finish a settings selection after its preceding update events have been applied.
     SettingsSelectionClosed,

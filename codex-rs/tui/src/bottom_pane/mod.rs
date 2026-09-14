@@ -125,6 +125,7 @@ mod chat_composer;
 mod chat_composer_history;
 mod command_popup;
 pub(crate) mod custom_prompt_view;
+mod dictation_preview;
 mod effort_status_line;
 mod experimental_features_view;
 mod file_search_popup;
@@ -924,6 +925,21 @@ impl BottomPane {
 
     pub(crate) fn insert_str(&mut self, text: &str) {
         self.composer.insert_str(text);
+        self.request_redraw();
+    }
+
+    pub(crate) fn insert_dictation(&mut self, transcript: &str) {
+        self.composer.insert_dictation(transcript);
+        self.request_redraw();
+    }
+
+    pub(crate) fn set_dictation_preview(&mut self, completed: &str, partial: &str) {
+        self.composer.set_dictation_preview(completed, partial);
+        self.request_redraw();
+    }
+
+    pub(crate) fn clear_dictation_preview(&mut self) {
+        self.composer.clear_dictation_preview();
         self.request_redraw();
     }
 

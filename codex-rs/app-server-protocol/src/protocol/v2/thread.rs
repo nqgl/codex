@@ -38,6 +38,10 @@ use codex_protocol::protocol::TokenUsageInfo as CoreTokenUsageInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
+
+const fn default_multi_agent_max_concurrent_threads() -> usize {
+    4
+}
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -106,7 +110,7 @@ pub struct ThreadStartParams {
     pub developer_instructions: Option<String>,
     #[ts(optional = nullable)]
     pub personality: Option<Personality>,
-    /// @deprecated Ignored. Use Ultra reasoning effort for proactive multi-agent behavior.
+    /// Deprecated compatibility field; ignored. Use thread/settings/update or feature configuration.
     #[experimental("thread/start.multiAgentMode")]
     #[ts(optional = nullable)]
     pub multi_agent_mode: Option<MultiAgentMode>,
@@ -208,10 +212,14 @@ pub struct ThreadStartResponse {
     #[serde(default)]
     pub active_permission_profile: Option<ActivePermissionProfile>,
     pub reasoning_effort: Option<ReasoningEffort>,
-    /// @deprecated Always `explicitRequestOnly`. Use `reasoningEffort` for Ultra behavior.
+    /// Effective multi-agent delegation policy for the thread.
     #[experimental("thread/start.multiAgentMode")]
     #[serde(default)]
     pub multi_agent_mode: MultiAgentMode,
+    /// Effective maximum number of concurrently resident multi-agent threads.
+    #[experimental("thread/start.multiAgentMaxConcurrentThreads")]
+    #[serde(default = "default_multi_agent_max_concurrent_threads")]
+    pub multi_agent_max_concurrent_threads: usize,
 }
 
 impl ThreadStartResponse {
@@ -276,10 +284,14 @@ pub struct ThreadSettingsUpdateParams {
     #[experimental("thread/settings/update.collaborationMode")]
     #[ts(optional = nullable)]
     pub collaboration_mode: Option<CollaborationMode>,
-    /// @deprecated Ignored. Use `effort: "ultra"` for proactive multi-agent behavior.
+    /// Set the multi-agent delegation policy independently of reasoning effort.
     #[experimental("thread/settings/update.multiAgentMode")]
     #[ts(optional = nullable)]
     pub multi_agent_mode: Option<MultiAgentMode>,
+    /// Set the multi-agent concurrency cap for this running thread tree.
+    #[experimental("thread/settings/update.multiAgentMaxConcurrentThreads")]
+    #[ts(optional = nullable)]
+    pub multi_agent_max_concurrent_threads: Option<usize>,
     /// Override the personality for subsequent turns.
     #[ts(optional = nullable)]
     pub personality: Option<Personality>,
@@ -308,10 +320,14 @@ pub struct ThreadSettings {
     pub effort: Option<ReasoningEffort>,
     pub summary: Option<ReasoningSummary>,
     pub collaboration_mode: CollaborationMode,
-    /// @deprecated Always `explicitRequestOnly`. Use `effort` for Ultra behavior.
+    /// Effective multi-agent delegation policy for subsequent turns.
     #[experimental("thread/settings.multiAgentMode")]
     #[serde(default)]
     pub multi_agent_mode: MultiAgentMode,
+    /// Effective maximum number of concurrently resident multi-agent threads.
+    #[experimental("thread/settings.multiAgentMaxConcurrentThreads")]
+    #[serde(default = "default_multi_agent_max_concurrent_threads")]
+    pub multi_agent_max_concurrent_threads: usize,
     pub personality: Option<Personality>,
 }
 
@@ -452,10 +468,14 @@ pub struct ThreadResumeResponse {
     #[serde(default)]
     pub active_permission_profile: Option<ActivePermissionProfile>,
     pub reasoning_effort: Option<ReasoningEffort>,
-    /// @deprecated Always `explicitRequestOnly`. Use `reasoningEffort` for Ultra behavior.
+    /// Effective multi-agent delegation policy for the resumed thread.
     #[experimental("thread/resume.multiAgentMode")]
     #[serde(default)]
     pub multi_agent_mode: MultiAgentMode,
+    /// Effective maximum number of concurrently resident multi-agent threads.
+    #[experimental("thread/resume.multiAgentMaxConcurrentThreads")]
+    #[serde(default = "default_multi_agent_max_concurrent_threads")]
+    pub multi_agent_max_concurrent_threads: usize,
     /// `thread/turns/list` page returned when requested by `initialTurnsPage`.
     #[experimental("thread/resume.initialTurnsPage")]
     #[serde(default)]
@@ -646,10 +666,14 @@ pub struct ThreadForkResponse {
     #[serde(default)]
     pub active_permission_profile: Option<ActivePermissionProfile>,
     pub reasoning_effort: Option<ReasoningEffort>,
-    /// @deprecated Always `explicitRequestOnly`. Use `reasoningEffort` for Ultra behavior.
+    /// Effective multi-agent delegation policy for the forked thread.
     #[experimental("thread/fork.multiAgentMode")]
     #[serde(default)]
     pub multi_agent_mode: MultiAgentMode,
+    /// Effective maximum number of concurrently resident multi-agent threads.
+    #[experimental("thread/fork.multiAgentMaxConcurrentThreads")]
+    #[serde(default = "default_multi_agent_max_concurrent_threads")]
+    pub multi_agent_max_concurrent_threads: usize,
 }
 
 impl ThreadForkResponse {

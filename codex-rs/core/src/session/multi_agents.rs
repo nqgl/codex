@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::config::MultiAgentV2Config;
 use crate::context::MultiAgentRoleInstructions;
 use crate::session::step_context::StepContext;
@@ -14,7 +15,7 @@ At the start of your turn, you are the active agent.
 You can spawn sub-agents to handle subtasks, and those sub-agents can spawn their own sub-agents.
 All agents in the team, including the agents that you can assign tasks to, are equally intelligent and capable, and have access to the same set of tools.
 
-You can use `spawn_agent` to create a new agent, `followup_task` to give an existing agent a new task and trigger a turn, and `send_message` to pass a message to a running agent without triggering a turn.
+You can use `spawn_agent` to create a new agent, `followup_task` to give an existing agent a new task and trigger a turn, and `send_message` to pass a message to an agent and wake it if idle.
 Child agents can also spawn their own sub-agents.
 You can decide how much context you want to propagate to your sub-agents with the `fork_turns` parameter.
 
@@ -47,7 +48,7 @@ Payload:
 ```
 You may also see them addressed as to=/root/..., which indicates your identity is /root/...
 "#;
-const DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT: &str = "Full-history forks (`fork_turns` omitted or `\"all\"`) inherit the parent model and reasoning effort and do not accept overrides. Only set `model` or `reasoning_effort` when explicitly requested by the user, applicable `AGENTS.md` instructions, or skill instructions; when doing so, set `fork_turns` to `\"none\"` or a positive integer string.";
+const DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT: &str = "Prefer the parent model and reasoning effort for ordinary delegation, especially for a full-history fork (`fork_turns` omitted or `\"all\"`), where changing models may lose cache reuse. A less capable `model` or lower `reasoning_effort` is appropriate only for a clearly simple, mechanical, bounded task whose semantics are already decided, or when the user, applicable `AGENTS.md`, or skill instructions request it. Prefer `fork_turns: \"none\"` or a positive integer string for those cheaper delegates unless they genuinely need the full context.";
 const DEFAULT_MULTI_AGENT_V2_WAIT_AGENT_USAGE_HINT_TEXT: &str =
     "When calling `wait_agent`, prefer longer waits (minutes) to avoid busy polling.";
 const DEFAULT_MULTI_AGENT_V2_SHARED_USAGE_HINT_TEXT: &str = r#"Note that collaboration tools cannot be called from inside `functions.exec`. Call `spawn_agent`, `send_message`, `followup_task`, `wait_agent`, `interrupt_agent`, and `list_agents` only as direct tool calls using the recipient shown in their tool definitions, such as `to=functions.collaboration.spawn_agent`, since they are intentionally absent from the `functions.exec` `tools.*` namespace. Available tools in `functions.exec` are explicitly described with a `tools` namespace in the developer message.
@@ -167,27 +168,36 @@ pub(crate) fn effective_multi_agent_mode(step_context: &StepContext) -> Option<M
         .as_ref()
         .and_then(|messages| messages.multi_agent.as_ref())
         .and_then(|messages| messages.mode.as_ref());
-    let mode_hint_text = turn_context
+    // Local runtime choices remain independent of reasoning effort and take precedence over the
+    // model catalog. A configured or catalog hint, including an empty string, defines a custom
+    // policy instead of an effort-derived built-in policy.
+    let multi_agent_mode = match turn_context
         .config
         .multi_agent_v2
         .multi_agent_mode_hint_text
         .as_deref()
-        .or_else(|| catalog_mode.and_then(|mode| mode.hint_text.as_deref()));
-
-    // A configured or catalog hint, including an empty string, defines a custom policy instead
-    // of an effort-derived built-in policy.
-    let multi_agent_mode = match mode_hint_text {
+    {
         Some(hint_text) => MultiAgentMode::Custom(hint_text.to_string()),
-        None => match settings.effective_reasoning_effort() {
-            Some(ReasoningEffort::Ultra) => catalog_mode
-                .and_then(|messages| messages.proactive.clone())
-                .map(MultiAgentMode::Custom)
-                .unwrap_or(MultiAgentMode::Proactive),
-            _ => catalog_mode
-                .and_then(|messages| messages.explicit.clone())
-                .map(MultiAgentMode::Custom)
-                .unwrap_or(MultiAgentMode::ExplicitRequestOnly),
-        },
+        None => turn_context
+            .config
+            .multi_agent_v2
+            .mode
+            .clone()
+            .unwrap_or_else(|| {
+                if let Some(hint_text) = catalog_mode.and_then(|mode| mode.hint_text.as_deref()) {
+                    return MultiAgentMode::Custom(hint_text.to_string());
+                }
+                match settings.effective_reasoning_effort() {
+                    Some(ReasoningEffort::Ultra) => catalog_mode
+                        .and_then(|messages| messages.proactive.clone())
+                        .map(MultiAgentMode::Custom)
+                        .unwrap_or(MultiAgentMode::Proactive),
+                    _ => catalog_mode
+                        .and_then(|messages| messages.explicit.clone())
+                        .map(MultiAgentMode::Custom)
+                        .unwrap_or(MultiAgentMode::ExplicitRequestOnly),
+                }
+            }),
     };
 
     match &turn_context.session_source {
@@ -199,5 +209,21 @@ pub(crate) fn effective_multi_agent_mode(step_context: &StepContext) -> Option<M
         | SessionSource::Custom(_)
         | SessionSource::Unknown => Some(multi_agent_mode),
         SessionSource::Internal(_) | SessionSource::SubAgent(_) => None,
+    }
+}
+
+pub(crate) fn configured_multi_agent_mode(
+    config: &Config,
+    reasoning_effort: Option<&ReasoningEffort>,
+) -> MultiAgentMode {
+    match &config.multi_agent_v2.multi_agent_mode_hint_text {
+        Some(hint_text) => MultiAgentMode::Custom(hint_text.clone()),
+        None => config.multi_agent_v2.mode.clone().unwrap_or_else(|| {
+            if reasoning_effort == Some(&ReasoningEffort::Ultra) {
+                MultiAgentMode::Proactive
+            } else {
+                MultiAgentMode::ExplicitRequestOnly
+            }
+        }),
     }
 }

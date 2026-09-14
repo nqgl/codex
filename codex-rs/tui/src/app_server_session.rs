@@ -103,6 +103,13 @@ use codex_app_server_protocol::ThreadMetadataUpdateParams;
 use codex_app_server_protocol::ThreadMetadataUpdateResponse;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
+use codex_app_server_protocol::ThreadRealtimeAppendAudioParams;
+use codex_app_server_protocol::ThreadRealtimeAppendAudioResponse;
+use codex_app_server_protocol::ThreadRealtimeStartParams;
+use codex_app_server_protocol::ThreadRealtimeStartResponse;
+use codex_app_server_protocol::ThreadRealtimeStartTransport;
+use codex_app_server_protocol::ThreadRealtimeStopParams;
+use codex_app_server_protocol::ThreadRealtimeStopResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadSetNameParams;
@@ -143,6 +150,9 @@ use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffortPreset;
+use codex_protocol::protocol::RealtimeConversationVersion;
+use codex_protocol::protocol::RealtimeOutputModality;
+use codex_protocol::protocol::RealtimeSessionType;
 use codex_protocol::protocol::SubAgentSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
@@ -282,6 +292,10 @@ fn is_thread_settings_update_unsupported(source: &JSONRPCErrorError) -> bool {
     source.code == JSONRPC_METHOD_NOT_FOUND
         || (source.code == JSONRPC_INVALID_REQUEST
             && source.message.contains(THREAD_SETTINGS_UPDATE_METHOD))
+}
+
+fn is_realtime_conversation_already_stopped(source: &JSONRPCErrorError) -> bool {
+    source.message == "conversation is not running"
 }
 
 /// Data collected during the TUI bootstrap phase that the main event loop
@@ -1673,6 +1687,88 @@ impl AppServerSession {
             .await
             .wrap_err("config/batchWrite failed while reloading user config in TUI")?;
         Ok(())
+    }
+
+    pub(crate) async fn dictation_start(&mut self, thread_id: ThreadId) -> Result<()> {
+        let request_id = self.next_request_id();
+        let _: ThreadRealtimeStartResponse = self
+            .client
+            .request_typed(ClientRequest::ThreadRealtimeStart {
+                request_id,
+                params: ThreadRealtimeStartParams {
+                    thread_id: thread_id.to_string(),
+                    client_managed_handoffs: Some(true),
+                    delegation_ack_filler: None,
+                    flush_transcript_tail_on_session_end: Some(false),
+                    codex_responses_as_items: Some(false),
+                    codex_response_item_prefix: None,
+                    codex_response_handoff_mode: None,
+                    codex_response_handoff_channel_prefixes: None,
+                    model: None,
+                    session_type: Some(RealtimeSessionType::Transcription),
+                    output_modality: RealtimeOutputModality::Text,
+                    include_startup_context: Some(false),
+                    initial_items: None,
+                    realtime_start_instructions: None,
+                    realtime_end_instructions: None,
+                    prompt: None,
+                    realtime_session_id: None,
+                    transport: Some(ThreadRealtimeStartTransport::Websocket),
+                    version: Some(RealtimeConversationVersion::V2),
+                    voice: None,
+                },
+            })
+            .await
+            .wrap_err("thread/realtime/start failed for composer dictation")?;
+        Ok(())
+    }
+
+    pub(crate) async fn dictation_audio(
+        &mut self,
+        params: ThreadRealtimeAppendAudioParams,
+    ) -> Result<()> {
+        let request_id = self.next_request_id();
+        match self
+            .client
+            .request_typed::<ThreadRealtimeAppendAudioResponse>(
+                ClientRequest::ThreadRealtimeAppendAudio { request_id, params },
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(TypedRequestError::Server { source, .. })
+                if is_realtime_conversation_already_stopped(&source) =>
+            {
+                tracing::debug!("ignoring audio queued after composer dictation stopped");
+                Ok(())
+            }
+            Err(err) => {
+                Err(err).wrap_err("thread/realtime/appendAudio failed for composer dictation")
+            }
+        }
+    }
+
+    pub(crate) async fn dictation_close(&mut self, thread_id: ThreadId) -> Result<()> {
+        let request_id = self.next_request_id();
+        match self
+            .client
+            .request_typed::<ThreadRealtimeStopResponse>(ClientRequest::ThreadRealtimeStop {
+                request_id,
+                params: ThreadRealtimeStopParams {
+                    thread_id: thread_id.to_string(),
+                },
+            })
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(TypedRequestError::Server { source, .. })
+                if is_realtime_conversation_already_stopped(&source) =>
+            {
+                tracing::debug!("ignoring close after composer dictation stopped");
+                Ok(())
+            }
+            Err(err) => Err(err).wrap_err("thread/realtime/stop failed for composer dictation"),
+        }
     }
 
     pub(crate) async fn reject_server_request(
@@ -3994,6 +4090,7 @@ mod tests {
             active_permission_profile: None,
             reasoning_effort: None,
             multi_agent_mode: Default::default(),
+            multi_agent_max_concurrent_threads: 4,
             initial_turns_page: None,
             turns_backwards_cursor: None,
             items_backwards_cursor: None,

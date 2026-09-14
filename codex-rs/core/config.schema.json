@@ -2490,6 +2490,14 @@
       },
       "type": "object"
     },
+    "MultiAgentModeConfig": {
+      "description": "Built-in policy controlling when Codex may delegate work to sub-agents.",
+      "enum": [
+        "explicit_request_only",
+        "proactive"
+      ],
+      "type": "string"
+    },
     "MultiAgentV2ConfigToml": {
       "additionalProperties": false,
       "properties": {
@@ -2525,6 +2533,14 @@
           "maximum": 3600000.0,
           "minimum": 0.0,
           "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/MultiAgentModeConfig"
+            }
+          ],
+          "description": "Overrides the effort-derived delegation policy. When unset, Ultra uses proactive delegation and other reasoning efforts require an explicit request."
         },
         "multi_agent_mode_hint_text": {
           "type": "string"

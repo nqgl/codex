@@ -13,6 +13,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    Delegation,
     Ide,
     Permissions,
     Keymap,
@@ -41,14 +42,19 @@ pub enum SlashCommand {
     Plan,
     Voice,
     Goal,
+    Agent,
+    AgentMessages,
     Agents,
     Side,
     Btw,
     Copy,
     Export,
     Raw,
+    Math,
     Diff,
     Mention,
+    Watch,
+    Monitor,
     Status,
     Cd,
     #[strum(to_string = "pwd", serialize = "cwd")]
@@ -73,7 +79,7 @@ pub enum SlashCommand {
     Stop,
     Clear,
     TestApproval,
-    #[strum(serialize = "subagents")]
+    #[strum(to_string = "subagents")]
     MultiAgents,
     // Debugging commands.
     #[strum(serialize = "debug-m-drop")]
@@ -104,8 +110,11 @@ impl SlashCommand {
             SlashCommand::Copy => "copy the last response or part of it",
             SlashCommand::Export => "export the conversation as markdown",
             SlashCommand::Raw => "toggle raw scrollback mode for copy-friendly terminal selection",
+            SlashCommand::Math => "toggle local equation typesetting (on/off)",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
+            SlashCommand::Watch => "notify Codex when a directory or Git HEAD changes",
+            SlashCommand::Monitor => "run a persistent command that notifies Codex on output",
             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
@@ -123,14 +132,16 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE",
             SlashCommand::MemoryUpdate => "DO NOT USE",
             SlashCommand::Model => "choose what model and reasoning effort to use",
+            SlashCommand::Delegation => "choose when Codex may delegate for this session",
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Voice => "start or stop voice; use /voice settings to choose a voice",
             SlashCommand::Goal => "set or view the goal for a long-running task",
+            SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
+            SlashCommand::AgentMessages => "show or hide inter-agent message activity",
             SlashCommand::Agents => "view and switch between all active agent sessions",
-            SlashCommand::MultiAgents => "switch between this session's subagents",
             SlashCommand::Side | SlashCommand::Btw => {
                 "start a side conversation in an ephemeral fork"
             }
@@ -173,6 +184,7 @@ impl SlashCommand {
                 | SlashCommand::Mcp
                 | SlashCommand::Export
                 | SlashCommand::Raw
+                | SlashCommand::Math
                 | SlashCommand::Cd
                 | SlashCommand::Pwd
                 | SlashCommand::Usage
@@ -180,6 +192,9 @@ impl SlashCommand {
                 | SlashCommand::Side
                 | SlashCommand::Btw
                 | SlashCommand::Resume
+                | SlashCommand::Watch
+                | SlashCommand::Monitor
+                | SlashCommand::AgentMessages
         )
     }
 
@@ -191,12 +206,14 @@ impl SlashCommand {
                 | SlashCommand::Agents
                 | SlashCommand::Export
                 | SlashCommand::Raw
+                | SlashCommand::Math
                 | SlashCommand::Diff
                 | SlashCommand::Mention
                 | SlashCommand::Status
                 | SlashCommand::Pwd
                 | SlashCommand::Usage
                 | SlashCommand::Ide
+                | SlashCommand::AgentMessages
         )
     }
 
@@ -228,11 +245,15 @@ impl SlashCommand {
             SlashCommand::Diff
             | SlashCommand::Resume
             | SlashCommand::Model
+            | SlashCommand::Delegation
             | SlashCommand::Permissions
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::Math
             | SlashCommand::Rename
             | SlashCommand::Mention
+            | SlashCommand::Watch
+            | SlashCommand::Monitor
             | SlashCommand::Skills
             | SlashCommand::Hooks
             | SlashCommand::Status
@@ -258,7 +279,10 @@ impl SlashCommand {
             | SlashCommand::Btw => true,
             SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,
-            SlashCommand::Agents | SlashCommand::MultiAgents => true,
+            SlashCommand::Agent
+            | SlashCommand::Agents
+            | SlashCommand::MultiAgents
+            | SlashCommand::AgentMessages => true,
             SlashCommand::Theme | SlashCommand::Pets => false,
         }
     }
@@ -306,6 +330,13 @@ mod tests {
     }
 
     #[test]
+    fn agent_commands_have_distinct_names() {
+        assert_eq!(SlashCommand::MultiAgents.command(), "subagents");
+        assert_eq!(SlashCommand::from_str("agents"), Ok(SlashCommand::Agents));
+        assert_eq!(SlashCommand::from_str("agent"), Ok(SlashCommand::Agent));
+    }
+
+    #[test]
     fn certain_commands_are_available_during_task() {
         assert!(SlashCommand::Goal.available_during_task());
         assert!(SlashCommand::Ide.available_during_task());
@@ -315,6 +346,10 @@ mod tests {
         assert!(SlashCommand::Raw.available_in_side_conversation());
         assert!(SlashCommand::Raw.supports_inline_args());
         assert!(SlashCommand::App.available_during_task());
+        assert!(SlashCommand::Watch.available_during_task());
+        assert!(SlashCommand::Watch.supports_inline_args());
+        assert!(SlashCommand::Monitor.available_during_task());
+        assert!(SlashCommand::Monitor.supports_inline_args());
     }
 
     #[test]

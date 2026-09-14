@@ -6,6 +6,8 @@ mod response;
 mod runtime;
 mod session;
 
+pub const BUNDLE_TOOL_NAME: &str = "__codex_bundle";
+
 pub use description::CODE_MODE_PRAGMA_PREFIX;
 pub use description::CodeModeToolKind;
 pub use description::EnabledToolMetadata;

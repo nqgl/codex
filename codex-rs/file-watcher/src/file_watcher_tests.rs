@@ -591,3 +591,23 @@ async fn dropping_live_watcher_releases_inner_watcher() {
 
     assert_eq!(weak_inner.upgrade().is_none(), true);
 }
+
+#[tokio::test]
+async fn polling_watcher_reports_file_changes() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let changed_file = temp_dir.path().join("notes.md");
+    let watcher = Arc::new(
+        FileWatcher::new_polling(Duration::from_millis(/*millis*/ 20)).expect("polling watcher"),
+    );
+    let (subscriber, mut rx) = watcher.add_subscriber();
+    let _registration =
+        subscriber.register_path(temp_dir.path().to_path_buf(), /*recursive*/ true);
+
+    std::fs::write(&changed_file, "@codex\n").expect("write changed file");
+
+    let event = timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("polling event timeout")
+        .expect("polling event");
+    assert_eq!(event.paths.contains(&changed_file), true);
+}

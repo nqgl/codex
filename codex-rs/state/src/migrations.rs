@@ -1,9 +1,12 @@
 use std::borrow::Cow;
 
 use sqlx::SqlitePool;
+use sqlx::migrate::Migrate;
 use sqlx::migrate::Migrator;
 
 pub(crate) static STATE_MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+pub(crate) static MONITOR_MIGRATOR: Migrator = sqlx::migrate!("./monitor_migrations");
+const MONITOR_MIGRATION_TABLE: &str = "_codex_monitor_migrations";
 pub(crate) static LOGS_MIGRATOR: Migrator = sqlx::migrate!("./logs_migrations");
 pub(crate) static GOALS_MIGRATOR: Migrator = sqlx::migrate!("./goals_migrations");
 pub(crate) static MEMORIES_MIGRATOR: Migrator = sqlx::migrate!("./memory_migrations");
@@ -29,6 +32,12 @@ fn runtime_migrator(base: &'static Migrator) -> Migrator {
 
 pub(crate) fn runtime_state_migrator() -> Migrator {
     runtime_migrator(&STATE_MIGRATOR)
+}
+
+pub(crate) fn runtime_monitor_migrator() -> Migrator {
+    let mut migrator = runtime_migrator(&MONITOR_MIGRATOR);
+    migrator.table_name = Cow::Borrowed(MONITOR_MIGRATION_TABLE);
+    migrator
 }
 
 pub(crate) fn runtime_logs_migrator() -> Migrator {
@@ -113,6 +122,98 @@ WHERE version = ?
     .bind(recency_migration.version)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+pub(crate) async fn repair_divergent_migration_versions(
+    pool: &SqlitePool,
+    migrator: &Migrator,
+) -> anyhow::Result<()> {
+    let migrations_table_exists = sqlx::query_scalar::<_, i64>(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !migrations_table_exists {
+        return Ok(());
+    }
+    // Acquire the writer slot before inspecting/creating the custom ledger. A deferred
+    // transaction can fail its read-to-write upgrade immediately despite busy_timeout.
+    let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+    transaction
+        .ensure_migrations_table(MONITOR_MIGRATION_TABLE)
+        .await?;
+
+    // These are the three released custom monitor layouts. Transfer only exact known checksums;
+    // unrelated or failed migration records must still fail normal SQLx validation.
+    // A separate ledger leaves all future upstream version numbers available.
+    for (legacy_versions, version) in [
+        ([48_i64, 51_i64, 54_i64], 54_i64),
+        ([49_i64, 52_i64, 55_i64], 55_i64),
+    ] {
+        let Some(migration) = MONITOR_MIGRATOR
+            .migrations
+            .iter()
+            .find(|m| m.version == version)
+        else {
+            continue;
+        };
+        for legacy in legacy_versions {
+            sqlx::query(
+                "INSERT INTO _codex_monitor_migrations
+                 (version, description, installed_on, success, checksum, execution_time)
+                 SELECT ?, ?, installed_on, success, checksum, execution_time FROM _sqlx_migrations
+                 WHERE version = ? AND checksum = ?
+                 ON CONFLICT(version) DO NOTHING",
+            )
+            .bind(version)
+            .bind(migration.description.as_ref())
+            .bind(legacy)
+            .bind(migration.checksum.as_ref())
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query(
+                "DELETE FROM _sqlx_migrations
+                 WHERE version = ? AND checksum = ?
+                   AND EXISTS (
+                     SELECT 1 FROM _codex_monitor_migrations AS monitor
+                     WHERE monitor.version = ? AND monitor.checksum = _sqlx_migrations.checksum
+                       AND monitor.success = _sqlx_migrations.success
+                   )",
+            )
+            .bind(legacy)
+            .bind(migration.checksum.as_ref())
+            .bind(version)
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+
+    // Restore shifted upstream migrations to the versions used by standard Codex builds.
+    for (legacy_version, current_version) in [(53_i64, 51_i64), (54_i64, 52_i64), (55_i64, 53_i64)]
+    {
+        let Some(current_migration) = migrator
+            .migrations
+            .iter()
+            .find(|migration| migration.version == current_version)
+        else {
+            continue;
+        };
+        sqlx::query(
+            "UPDATE _sqlx_migrations SET version = ?, description = ?
+             WHERE version = ? AND checksum = ?
+               AND NOT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = ?)",
+        )
+        .bind(current_version)
+        .bind(current_migration.description.as_ref())
+        .bind(legacy_version)
+        .bind(current_migration.checksum.as_ref())
+        .bind(current_version)
+        .execute(&mut *transaction)
+        .await?;
+    }
+    transaction.commit().await?;
     Ok(())
 }
 

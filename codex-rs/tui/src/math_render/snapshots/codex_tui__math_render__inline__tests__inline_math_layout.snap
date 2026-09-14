@@ -1,0 +1,7 @@
+---
+source: tui/src/math_render/inline_tests.rs
+expression: "expanded.iter().map(|line|\nline.line.to_string().trim_end().to_owned()).collect::<Vec<_>>().join(\"\\n\")"
+---
+Before [x] and [y]; link
+       /x\
+(https://example.com).

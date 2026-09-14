@@ -569,7 +569,7 @@ impl AgentControl {
         // Reserving a slot can evict an idle nested parent. Capture its instructions
         // alongside its authority so the child does not depend on a later live lookup.
         let residency_slot = self
-            .reserve_v2_residency_slot(&state, &config, Some(thread_id))
+            .reserve_v2_residency_slot(&state, Some(thread_id))
             .await?;
 
         match state
@@ -631,14 +631,18 @@ impl AgentControl {
         if let Some(session_source) = session_source.as_ref() {
             self.ensure_execution_capacity(multi_agent_version, session_source)?;
         }
-        let agent_max_threads = config.effective_agent_max_threads(multi_agent_version);
+        let agent_max_threads = if multi_agent_version == MultiAgentVersion::V2 {
+            Some(self.max_subagent_threads())
+        } else {
+            config.effective_agent_max_threads(multi_agent_version)
+        };
         let spawn_uses_v2_residency = multi_agent_version == MultiAgentVersion::V2
             && session_source
                 .as_ref()
                 .is_some_and(is_v2_resident_session_source);
         let residency_slot = if spawn_uses_v2_residency {
             Some(
-                self.reserve_v2_residency_slot(&state, &config, /*protected_thread_id*/ None)
+                self.reserve_v2_residency_slot(&state, /*protected_thread_id*/ None)
                     .await?,
             )
         } else {
@@ -1251,7 +1255,11 @@ impl AgentControl {
                 &config,
             )
             .await;
-        let agent_max_threads = config.effective_agent_max_threads(multi_agent_version);
+        let agent_max_threads = if multi_agent_version == MultiAgentVersion::V2 {
+            Some(self.max_subagent_threads())
+        } else {
+            config.effective_agent_max_threads(multi_agent_version)
+        };
         let mut reservation = self.state.reserve_spawn_slot(agent_max_threads)?;
         let (session_source, agent_metadata) = match session_source {
             SessionSource::SubAgent(SubAgentSource::ThreadSpawn {

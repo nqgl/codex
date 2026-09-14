@@ -2,6 +2,7 @@ use anyhow::Result;
 use codex_core::TurnInputRequest;
 use codex_core::config::Config;
 use codex_features::Feature;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::MultiAgentMessages;
 use codex_protocol::openai_models::MultiAgentModeMessages;
@@ -26,8 +27,9 @@ use serde_json::Value;
 use serde_json::json;
 use test_case::test_case;
 
-const NO_SPAWN_TEXT: &str = "Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.";
-const PROACTIVE_TEXT: &str = "Proactive multi-agent delegation is active.";
+const NO_SPAWN_TEXT: &str = "Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user or applicable AGENTS.md or skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.";
+const BALANCED_TEXT: &str = "Balanced multi-agent delegation is active";
+const PROACTIVE_TEXT: &str = "Proactive multi-agent delegation is active";
 const CUSTOM_MODE_HINT_TEXT: &str = "Use the configured delegation policy.";
 const CATALOG_MODE_HINT_TEXT: &str = "Use the model catalog delegation policy.";
 const CATALOG_EXPLICIT_TEXT: &str = "Use explicit delegation from the model catalog.";
@@ -159,6 +161,118 @@ async fn ultra_reasoning_uses_highest_non_ultra_and_proactive_mode() -> Result<(
             count_containing(&texts, PROACTIVE_TEXT),
         ),
         (0, 1)
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn configured_proactive_mode_is_independent_of_reasoning_effort() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let test = test_codex()
+        .with_config(|config| {
+            configure_multi_agent_v2(config);
+            config.multi_agent_v2.mode = Some(MultiAgentMode::Proactive);
+            config.model_reasoning_effort = Some(ReasoningEffort::High);
+        })
+        .build(&server)
+        .await?;
+
+    submit_turn(&test.codex, "hello", /*effort*/ None).await?;
+
+    let request = response.single_request();
+    assert_eq!(
+        request.body_json()["reasoning"]["effort"].as_str(),
+        Some("high")
+    );
+    let input = request.input();
+    let texts = developer_texts(&input);
+    assert_eq!(
+        (
+            count_containing(&texts, NO_SPAWN_TEXT),
+            count_containing(&texts, PROACTIVE_TEXT),
+        ),
+        (0, 1)
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn configured_balanced_mode_uses_bounded_delegation_policy() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let test = test_codex()
+        .with_config(|config| {
+            configure_multi_agent_v2(config);
+            config.multi_agent_v2.mode = Some(MultiAgentMode::Balanced);
+        })
+        .build(&server)
+        .await?;
+
+    submit_turn(&test.codex, "hello", /*effort*/ None).await?;
+
+    let input = response.single_request().input();
+    let texts = developer_texts(&input);
+    assert_eq!(
+        (
+            count_containing(&texts, NO_SPAWN_TEXT),
+            count_containing(&texts, BALANCED_TEXT),
+            count_containing(&texts, PROACTIVE_TEXT),
+        ),
+        (0, 1, 0)
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn configured_explicit_mode_overrides_ultra_delegation_policy() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let test = test_codex()
+        .with_model_info_override("gpt-5.4", add_ultra_reasoning)
+        .with_config(|config| {
+            configure_ultra(config);
+            config.multi_agent_v2.mode = Some(MultiAgentMode::ExplicitRequestOnly);
+        })
+        .build(&server)
+        .await?;
+
+    submit_turn(&test.codex, "hello", /*effort*/ None).await?;
+
+    let request = response.single_request();
+    assert_eq!(
+        request.body_json()["reasoning"]["effort"].as_str(),
+        Some("xhigh")
+    );
+    let input = request.input();
+    let texts = developer_texts(&input);
+    assert_eq!(
+        (
+            count_containing(&texts, NO_SPAWN_TEXT),
+            count_containing(&texts, PROACTIVE_TEXT),
+        ),
+        (1, 0)
     );
 
     Ok(())

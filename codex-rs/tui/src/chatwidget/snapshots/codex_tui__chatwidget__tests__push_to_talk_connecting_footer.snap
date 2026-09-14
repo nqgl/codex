@@ -1,0 +1,9 @@
+---
+source: tui/src/chatwidget/tests/dictation.rs
+expression: normalized_backend_snapshot(terminal.backend())
+---
+"                                                                                "
+"                                                                                "
+"› Ask Codex to do anything                                                      "
+"                                                                                "
+"   F8 connecting · hold to talk                                                 "

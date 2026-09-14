@@ -273,6 +273,16 @@ async fn raw_output_status_line_value_only_shows_when_enabled() {
 }
 
 #[tokio::test]
+async fn delegation_status_line_tracks_session_mode_for_v2_model() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(Some("gpt-5.6-sol")).await;
+
+    chat.set_multi_agent_mode(MultiAgentMode::Proactive);
+    let status_line = status_line_text(&chat).expect("status line");
+    assert!(status_line.contains("Delegation proactive"));
+    assert!(chat.config.tui_status_line.is_none());
+}
+
+#[tokio::test]
 async fn status_line_branch_changes_render_no_changes() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.status_line_git_summary = Some(StatusLineGitSummary {

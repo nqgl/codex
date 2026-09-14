@@ -16,11 +16,11 @@ use crate::GuardianReviewError;
 use crate::GuardianReviewOutcome;
 
 const REJECTION_INSTRUCTIONS: &str = concat!(
-    "The agent must not attempt to achieve the same outcome via workaround, ",
-    "indirect execution, or policy circumvention. ",
-    "Proceed only with a materially safer alternative, ",
-    "or if the user explicitly approves the action after being informed of the risk. ",
-    "Otherwise, stop and request user input.",
+    "This action was denied. Reaching the same outcome via workaround, ",
+    "indirect execution, or circumvention would bypass the denial rather ",
+    "than resolve it. Proceed only with a materially safer alternative, ",
+    "or with the user's explicit approval after they've been informed of the risk; ",
+    "otherwise stop and ask the user for direction.",
 );
 const REVIEW_FAILURE_INSTRUCTIONS: &str = concat!(
     "The action was not executed because automatic approval review could not be completed. ",

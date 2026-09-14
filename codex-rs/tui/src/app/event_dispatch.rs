@@ -92,6 +92,21 @@ impl App {
         }
 
         match event {
+            AppEvent::DirectoryWatchCommand(command) => {
+                self.handle_directory_watch_command(command).await;
+            }
+            AppEvent::DirectoryWatchChanged(notification) => {
+                self.handle_directory_watch_notification(notification);
+            }
+            AppEvent::MonitorCommand(command) => {
+                self.handle_monitor_command(command).await;
+            }
+            AppEvent::MonitorOutput(notification) => {
+                self.handle_monitor_output(notification);
+            }
+            AppEvent::MonitorExited(exit) => {
+                self.handle_monitor_exit(exit).await;
+            }
             AppEvent::UserVerificationApproved { thread_id, server_name, request_id } => {
                 Box::pin(self.start_user_verification(app_server, thread_id, server_name, request_id)).await?;
             }
@@ -330,6 +345,21 @@ impl App {
             AppEvent::RawOutputModeChanged { enabled } => {
                 self.apply_raw_output_mode(tui, enabled, /*notify*/ false);
             }
+            AppEvent::MathRendered => {
+                if let Err(err) = self.finish_required_stream_reflow(tui) {
+                    tracing::warn!(error = %err, "failed to redraw math");
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::SetAgentMessageFeed { enabled } => {
+                let enabled = enabled.unwrap_or(!self.agent_message_feed_enabled);
+                self.agent_message_feed_enabled = enabled;
+                let state = if enabled { "on" } else { "off" };
+                self.chat_widget.add_info_message(
+                    format!("Inter-agent message feed is {state} for this session"),
+                    /*hint*/ None,
+                );
+            }
             AppEvent::ClearUiAndSubmitUserMessage { text } => {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
                 self.reset_app_ui_state_after_clear();
@@ -466,6 +496,7 @@ impl App {
                             } else {
                                 None
                             };
+                            self.pause_monitors_for_fork();
                             self.shutdown_current_thread(app_server).await;
                             match self
                                 .replace_chat_widget_with_app_server_thread(
@@ -637,6 +668,7 @@ impl App {
                 };
                 match started {
                     Ok(forked) => {
+                        self.pause_monitors_for_fork();
                         self.shutdown_current_thread(app_server).await;
                         match self
                             .replace_chat_widget_with_app_server_thread(
@@ -929,6 +961,15 @@ impl App {
                         return Err(err);
                     }
                 }
+            }
+            AppEvent::DictationAudio { generation, frame } => {
+                self.chat_widget.on_dictation_audio(generation, frame);
+            }
+            AppEvent::DictationCommit { generation } => {
+                self.chat_widget.on_dictation_commit(generation);
+            }
+            AppEvent::DictationFinalize { generation } => {
+                self.chat_widget.finalize_dictation(generation);
             }
             AppEvent::ConfirmSafetyBufferedRetry {
                 thread_id,
@@ -1801,6 +1842,38 @@ impl App {
                         "timed out stopping voice conversation after switching threads"
                     ),
                 }
+            }
+            AppEvent::SetMultiAgentMode(mode) => {
+                self.on_update_multi_agent_mode(mode.clone());
+                self.sync_active_thread_multi_agent_mode(app_server, mode.clone())
+                    .await;
+                let label = match mode {
+                    MultiAgentMode::ExplicitRequestOnly => "explicit requests only",
+                    MultiAgentMode::Balanced => "balanced",
+                    MultiAgentMode::Proactive => "proactive",
+                    MultiAgentMode::Custom(_) => "custom",
+                };
+                self.chat_widget.add_info_message(
+                    format!("Agent delegation set to {label} for this session"),
+                    /*hint*/ None,
+                );
+            }
+            AppEvent::OpenMultiAgentConcurrencyPopup => {
+                self.chat_widget.open_multi_agent_concurrency_popup();
+            }
+            AppEvent::SetMultiAgentMaxConcurrentThreads(max_threads) => {
+                self.on_update_multi_agent_max_concurrent_threads(max_threads);
+                self.sync_active_thread_multi_agent_max_concurrent_threads(
+                    app_server,
+                    max_threads,
+                )
+                .await;
+                self.chat_widget.add_info_message(
+                    format!(
+                        "Agent concurrency set to {max_threads} for this session"
+                    ),
+                    /*hint*/ None,
+                );
             }
             AppEvent::SettingsSelectionClosed => {
                 self.app_event_tx.send(AppEvent::SettingsSelectionSettled);

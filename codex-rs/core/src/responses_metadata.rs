@@ -157,6 +157,7 @@ impl CompactionTurnMetadata {
 pub(crate) enum CodexResponsesRequestKind {
     Turn,
     Prewarm,
+    BundleQuery,
     Compaction(CompactionTurnMetadata),
     Memory,
 }
@@ -166,6 +167,7 @@ impl CodexResponsesRequestKind {
         match self {
             CodexResponsesRequestKind::Turn => ("turn", None),
             CodexResponsesRequestKind::Prewarm => ("prewarm", None),
+            CodexResponsesRequestKind::BundleQuery => ("bundle_query", None),
             CodexResponsesRequestKind::Compaction(metadata) => ("compaction", Some(metadata)),
             CodexResponsesRequestKind::Memory => ("memory", None),
         }

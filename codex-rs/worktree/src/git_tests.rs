@@ -14,6 +14,23 @@ use super::GitOperation;
 use super::configured_filters;
 use super::git_output;
 use super::git_stdout;
+use super::normalize_worktree_porcelain;
+
+#[test]
+fn legacy_worktree_porcelain_preserves_native_path_bytes() {
+    let input = b"worktree \"/tmp/a\\n\\t\\377\\\"\\\\b\"\nHEAD abc\n\nworktree /tmp/space dir\nHEAD def\n\n";
+    assert_eq!(
+        normalize_worktree_porcelain(input).unwrap(),
+        b"worktree /tmp/a\n\t\xff\"\\b\0HEAD abc\0\0worktree /tmp/space dir\0HEAD def\0\0"
+    );
+    for invalid in [
+        b"worktree \"unterminated\n".as_slice(),
+        b"worktree \"nul\\000\"\n",
+        b"worktree \"bad\\777\"\n",
+    ] {
+        assert!(normalize_worktree_porcelain(invalid).is_err());
+    }
+}
 
 fn setup_git(cwd: &Path, args: &[&str]) -> Result<()> {
     let output = Command::new("git").current_dir(cwd).args(args).output()?;

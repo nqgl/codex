@@ -203,6 +203,18 @@ async fn guardian_subagent_review_preserves_late_root_user_authorization(
     )
     .await;
     mount_completion(&server, root_thread_id, SPAWN_CALL_ID).await;
+    // Worker completion can wake the parent in this harness. Allow its pre-approval
+    // turns to finish without racing the later authorization-specific response mocks.
+    wiremock::Mock::given(move |request: &wiremock::Request| {
+        is_root_request(request, root_thread_id)
+            && has_call_output(request, SPAWN_CALL_ID)
+            && !contains_text(request, USER_APPROVAL)
+    })
+    .respond_with(core_test_support::responses::sse_response(sse(vec![
+        ev_completed("root-worker-notification-completed"),
+    ])))
+    .mount(&server)
+    .await;
     mount_sse_once_match(
         &server,
         move |request: &wiremock::Request| {
@@ -299,6 +311,30 @@ async fn guardian_subagent_review_preserves_late_root_user_authorization(
         },
     ]);
     test.codex.inject_response_items(root_history_items).await?;
+
+    if matches!(root_context, RootContext::RetainedAtMessageLimit) {
+        // This harness wakes the parent when its worker finishes. Injected fixture items can
+        // therefore queue behind an automatic turn. Record them before accepting the next user
+        // approval so this test still exercises the intended authorization order.
+        tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 5), async {
+            loop {
+                let history = test.codex.conversation_history_snapshot().await;
+                if history.retained_context().is_some_and(|retained| {
+                    retained.ordered_entries().any(|(_, entry)| {
+                        matches!(
+                            entry,
+                            codex_history::RetainedContextEntry::UserMessage(message)
+                                if message.text == "Root instruction 5."
+                        )
+                    })
+                }) {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(/*millis*/ 10)).await;
+            }
+        })
+        .await?;
+    }
 
     mount_sse_once_match(
         &server,

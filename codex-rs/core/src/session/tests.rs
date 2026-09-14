@@ -7322,6 +7322,7 @@ fn submission_dispatch_span_uses_debug_for_realtime_audio() {
     let dispatch_span = submission_dispatch_span(&Submission {
         id: "sub-1".into(),
         op: Op::RealtimeConversationAudio(ConversationAudioParams {
+            commit: false,
             frame: RealtimeAudioFrame {
                 data: "ZmFrZQ==".into(),
                 sample_rate: 16_000,

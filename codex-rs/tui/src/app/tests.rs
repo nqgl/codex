@@ -27,6 +27,8 @@ mod disconnect;
 mod key_chords;
 #[path = "tests/luna_reserve_recovery_tests.rs"]
 mod luna_reserve_recovery_tests;
+#[path = "tests/math_render_tests.rs"]
+mod math_render_tests;
 #[path = "tests/mcp_startup.rs"]
 mod mcp_startup;
 #[path = "tests/misalignment_policy_tests.rs"]
@@ -1941,6 +1943,64 @@ async fn collab_receiver_notification_caches_thread_without_app_server_read() {
 }
 
 #[tokio::test]
+async fn background_agent_message_feed_is_visible_and_session_toggleable() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let root_thread_id = ThreadId::new();
+    let child_thread_id = ThreadId::new();
+    app.primary_thread_id = Some(root_thread_id);
+    app.active_thread_id = Some(root_thread_id);
+    app.agent_navigation
+        .record_sub_agent_activity(SubAgentActivityDisplay {
+            thread_id: child_thread_id,
+            agent_path: "/root/reviewer".to_string(),
+            is_running_hint: true,
+        });
+
+    app.enqueue_thread_notification(
+        child_thread_id,
+        ServerNotification::ItemCompleted(codex_app_server_protocol::ItemCompletedNotification {
+            thread_id: child_thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 0,
+            item: ThreadItem::SubAgentActivity {
+                id: "message-1".to_string(),
+                kind: codex_app_server_protocol::SubAgentActivityKind::Interacted,
+                agent_thread_id: root_thread_id.to_string(),
+                agent_path: "/root".to_string(),
+            },
+        }),
+    )
+    .await?;
+
+    let rendered = loop {
+        let event = app_event_rx.try_recv().expect("message feed history cell");
+        if let AppEvent::InsertHistoryCell(cell) = event {
+            break lines_to_single_string(&cell.display_lines(/*width*/ 80));
+        }
+    };
+    assert_snapshot!(rendered, @"• Message `/root/reviewer` → `/root`");
+
+    app.agent_message_feed_enabled = false;
+    app.enqueue_thread_notification(
+        child_thread_id,
+        ServerNotification::ItemCompleted(codex_app_server_protocol::ItemCompletedNotification {
+            thread_id: child_thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::SubAgentActivity {
+                id: "message-2".to_string(),
+                kind: codex_app_server_protocol::SubAgentActivityKind::Interacted,
+                agent_thread_id: root_thread_id.to_string(),
+                agent_path: "/root".to_string(),
+            },
+        }),
+    )
+    .await?;
+    assert!(app_event_rx.try_recv().is_err());
+    Ok(())
+}
+
+#[tokio::test]
 async fn collab_receiver_notification_does_not_cache_not_found_thread() {
     let mut app = make_test_app().await;
     let receiver_thread_id =
@@ -2259,6 +2319,49 @@ async fn open_agent_picker_selects_path_backed_agent() -> Result<()> {
         Ok(AppEvent::SelectAgentThread(selected_thread_id)) if selected_thread_id == thread_id
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn agent_picker_orders_recently_active_subagents_first() {
+    let mut app = make_test_app().await;
+    let main_thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000101").expect("valid thread id");
+    let recently_active_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000102").expect("valid thread id");
+    let newest_quiet_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000103").expect("valid thread id");
+    app.primary_thread_id = Some(main_thread_id);
+    app.active_thread_id = Some(main_thread_id);
+    app.agent_navigation.upsert(
+        main_thread_id,
+        /*agent_nickname*/ None,
+        /*agent_role*/ None,
+        /*is_closed*/ false,
+    );
+    app.agent_navigation.upsert(
+        recently_active_id,
+        Some("Reviewer".to_string()),
+        Some("worker".to_string()),
+        /*is_closed*/ false,
+    );
+    app.agent_navigation.upsert(
+        newest_quiet_id,
+        Some("Scout".to_string()),
+        Some("explorer".to_string()),
+        /*is_closed*/ false,
+    );
+    app.agent_navigation.record_activity(recently_active_id);
+
+    let params = app.agent_picker_selection_view_params(/*selected*/ None);
+    app.chat_widget.show_selection_view(params);
+
+    assert_app_snapshot!(
+        "agent_picker_recent_activity_order",
+        render_bottom_popup(&app.chat_widget, /*width*/ 80)
+            .replace(&main_thread_id.to_string(), "[main]")
+            .replace(&recently_active_id.to_string(), "[reviewer]")
+            .replace(&newest_quiet_id.to_string(), "[scout]")
+    );
 }
 
 #[tokio::test]
@@ -5881,6 +5984,8 @@ async fn make_test_app() -> App {
         runtime_approval_policy_override: None,
         runtime_permission_profile_override: None,
         file_search,
+        directory_watches: Vec::new(),
+        monitors: Vec::new(),
         transcript_cells: Vec::new(),
         last_rendered_history_tail: None,
         last_thread_usage_status_cell: None,
@@ -5917,6 +6022,7 @@ async fn make_test_app() -> App {
         pending_thread_titles: HashMap::new(),
         thread_event_listener_tasks: HashMap::new(),
         agent_navigation: AgentNavigationState::default(),
+        agent_message_feed_enabled: true,
         pending_server_profiles: HashMap::new(),
         agents_overview: Default::default(),
         side_threads: HashMap::new(),
@@ -5980,6 +6086,8 @@ pub(super) async fn make_test_app_with_channels() -> (
             runtime_approval_policy_override: None,
             runtime_permission_profile_override: None,
             file_search,
+            directory_watches: Vec::new(),
+            monitors: Vec::new(),
             transcript_cells: Vec::new(),
             last_rendered_history_tail: None,
             last_thread_usage_status_cell: None,
@@ -6016,6 +6124,7 @@ pub(super) async fn make_test_app_with_channels() -> (
             pending_thread_titles: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
+            agent_message_feed_enabled: true,
             pending_server_profiles: HashMap::new(),
             agents_overview: Default::default(),
             side_threads: HashMap::new(),
@@ -9254,6 +9363,7 @@ async fn inactive_thread_settings_notification_updates_cached_collaboration_mode
             summary: None,
             collaboration_mode: collaboration_mode.clone(),
             multi_agent_mode: Default::default(),
+            multi_agent_max_concurrent_threads: 4,
             personality: Some(Personality::Pragmatic),
         },
     };

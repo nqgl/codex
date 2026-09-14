@@ -208,8 +208,16 @@ impl ChatWidget {
             return;
         }
 
+        let mut status_line_items = selections.status_line_items.clone();
+        if self.config.multi_agent_v2.mode.is_some()
+            && self.current_model_uses_multi_agent_v2()
+            && !status_line_items.contains(&StatusLineItem::DelegationMode)
+        {
+            status_line_items.push(StatusLineItem::DelegationMode);
+        }
+
         let mut segments = Vec::new();
-        for item in &selections.status_line_items {
+        for item in &status_line_items {
             if let Some(value) = self.status_line_value_for_item(*item) {
                 segments.push((*item, value));
             }
@@ -811,6 +819,19 @@ impl ChatWidget {
                     }
                 }),
             StatusLineItem::RawOutput => self.raw_output_mode().then(|| "raw output".to_string()),
+            StatusLineItem::DelegationMode => self.current_model_uses_multi_agent_v2().then(|| {
+                let mode = match self.effective_multi_agent_mode() {
+                    MultiAgentMode::ExplicitRequestOnly => "explicit",
+                    MultiAgentMode::Balanced => "balanced",
+                    MultiAgentMode::Proactive => "proactive",
+                    MultiAgentMode::Custom(_) => "custom",
+                };
+                let max_threads = self
+                    .config
+                    .multi_agent_v2
+                    .max_concurrent_threads_per_session;
+                format!("Delegation {mode}/{max_threads}")
+            }),
             StatusLineItem::ThreadName => {
                 self.thread_name.as_deref().and_then(normalize_thread_name)
             }
@@ -864,6 +885,7 @@ impl ChatWidget {
             StatusSurfacePreviewItem::SessionId => StatusLineItem::SessionId,
             StatusSurfacePreviewItem::FastMode => StatusLineItem::FastMode,
             StatusSurfacePreviewItem::RawOutput => StatusLineItem::RawOutput,
+            StatusSurfacePreviewItem::DelegationMode => StatusLineItem::DelegationMode,
             StatusSurfacePreviewItem::WorkspaceHeadline => StatusLineItem::WorkspaceHeadline,
             StatusSurfacePreviewItem::Model => StatusLineItem::ModelName,
             StatusSurfacePreviewItem::ModelWithReasoning => StatusLineItem::ModelWithReasoning,

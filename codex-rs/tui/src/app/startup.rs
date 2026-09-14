@@ -369,6 +369,15 @@ impl App {
                 &initial_prompt,
                 &initial_images,
             );
+        let should_restore_monitors_after_startup_resume =
+            matches!(&session_selection, SessionSelection::Resume(_));
+        let startup_fork_monitor_source_thread_id = match &session_selection {
+            SessionSelection::Fork(target_session) => Some(target_session.thread_id),
+            SessionSelection::StartFresh
+            | SessionSelection::Resume(_)
+            | SessionSelection::Exit
+            | SessionSelection::AgentsOverview => None,
+        };
         let thread_and_widget_started_at = Instant::now();
         let pending_startup_thread_start = matches!(
             &session_selection,
@@ -746,6 +755,8 @@ See the Codex keymap documentation for supported actions and examples."
             runtime_permission_profile_override: None,
             pending_server_profiles: HashMap::new(),
             file_search,
+            directory_watches: Vec::new(),
+            monitors: Vec::new(),
             enhanced_keys_supported,
             keymap: runtime_keymap,
             key_chord_matcher: KeyChordMatcher::default(),
@@ -788,6 +799,7 @@ See the Codex keymap documentation for supported actions and examples."
             thread_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
             agents_overview: Default::default(),
+            agent_message_feed_enabled: true,
             side_threads: HashMap::new(),
             abandoned_side_threads: HashSet::new(),
             active_thread_id: None,
@@ -866,6 +878,18 @@ See the Codex keymap documentation for supported actions and examples."
             if read_only_thread {
                 app.ensure_thread_channel(thread_id).mark_external_writer();
                 app.chat_widget.show_external_writer_thread();
+            } else {
+                let monitor_restore = async {
+                    if should_restore_monitors_after_startup_resume {
+                        app.restore_thread_monitors(thread_id).await;
+                    } else if let Some(source_thread_id) = startup_fork_monitor_source_thread_id {
+                        app.inherit_thread_monitors_paused(source_thread_id, thread_id)
+                            .await;
+                    }
+                };
+                if let Err(err) = startup_draft.run_until(tui, monitor_restore).await {
+                    return shutdown_on_startup_error(app_server, err).await;
+                }
             }
             if !read_only_thread
                 && should_prompt_for_paused_goal_after_startup_resume

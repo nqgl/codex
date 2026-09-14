@@ -808,7 +808,8 @@ pub(super) async fn fetch_account_rate_limits(
         .request_typed(ClientRequest::GetAccountRateLimits {
             request_id: request_id.clone(),
             params: Some(GetAccountRateLimitsParams {
-                supports_luna_reserve: true,
+                // This harness must stop at usage limits, not downgrade ongoing work.
+                supports_luna_reserve: false,
                 exclude_reset_credit_details: origin == RateLimitRefreshOrigin::Periodic,
             }),
         })
@@ -826,9 +827,30 @@ pub(super) async fn fetch_account_rate_limits(
                 params: None,
             })
             .await
+            .map(without_reserve_fallback)
             .wrap_err("account/rateLimits/read failed in TUI");
     }
-    result.wrap_err("account/rateLimits/read failed in TUI")
+    result
+        .map(without_reserve_fallback)
+        .wrap_err("account/rateLimits/read failed in TUI")
+}
+
+fn without_reserve_fallback(
+    mut response: GetAccountRateLimitsResponse,
+) -> GetAccountRateLimitsResponse {
+    // Also reject unsolicited Reserve offers from cached or older remote servers.
+    if let Some(banner) = response.rate_limit_upsell.as_mut() {
+        if banner["banner_type"] == "luna_reserve" {
+            response.rate_limit_upsell = None;
+        } else if let Some(fallbacks) = banner
+            .get_mut("fallback_model_slugs")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            fallbacks
+                .retain(|model| model.as_str() != Some(crate::model_catalog::LUNA_RESERVE_MODEL));
+        }
+    }
+    response
 }
 
 pub(super) async fn fetch_account_token_activity(

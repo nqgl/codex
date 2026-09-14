@@ -28,7 +28,9 @@ impl MultiAgentModeState {
                     &hint_text,
                     TruncationPolicy::Tokens(MULTI_AGENT_MODE_MAX_TOKENS),
                 )),
-                mode @ (MultiAgentMode::ExplicitRequestOnly | MultiAgentMode::Proactive) => mode,
+                mode @ (MultiAgentMode::ExplicitRequestOnly
+                | MultiAgentMode::Balanced
+                | MultiAgentMode::Proactive) => mode,
             }),
             usage_hint_hash: None,
         }

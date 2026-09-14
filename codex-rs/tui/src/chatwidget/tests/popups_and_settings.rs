@@ -3590,6 +3590,66 @@ async fn model_picker_refresh_dismisses_empty_choices() {
 }
 
 #[tokio::test]
+async fn delegation_selection_popup_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.6-sol")).await;
+    chat.thread_id = Some(ThreadId::new());
+    assert!(!chat.config.features.enabled(Feature::MultiAgentV2));
+    chat.config.multi_agent_v2.mode = Some(MultiAgentMode::ExplicitRequestOnly);
+    chat.open_delegation_popup();
+
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert_chatwidget_snapshot!("delegation_selection_popup", popup);
+}
+
+#[tokio::test]
+async fn delegation_selection_popup_sets_proactive_mode() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.6-sol")).await;
+    chat.thread_id = Some(ThreadId::new());
+    assert!(!chat.config.features.enabled(Feature::MultiAgentV2));
+    chat.config.multi_agent_v2.mode = Some(MultiAgentMode::ExplicitRequestOnly);
+    chat.open_delegation_popup();
+    while rx.try_recv().is_ok() {}
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::SetMultiAgentMode(MultiAgentMode::Proactive)
+    )));
+}
+
+#[tokio::test]
+async fn delegation_concurrency_popup_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.6-sol")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.open_multi_agent_concurrency_popup();
+
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert_chatwidget_snapshot!("delegation_concurrency_popup", popup);
+}
+
+#[tokio::test]
+async fn delegation_concurrency_popup_sets_session_cap() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.6-sol")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.open_multi_agent_concurrency_popup();
+    while rx.try_recv().is_ok() {}
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AppEvent::SetMultiAgentMaxConcurrentThreads(6)))
+    );
+}
+
+#[tokio::test]
 async fn skills_menu_default_mentions_shortcut_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.open_skills_menu();

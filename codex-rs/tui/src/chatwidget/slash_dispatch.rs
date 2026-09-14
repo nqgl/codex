@@ -13,8 +13,12 @@ use crate::bottom_pane::slash_commands::BuiltinCommandFlags;
 use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use crate::bottom_pane::slash_commands::SlashCommandItem;
 use crate::bottom_pane::slash_commands::find_slash_command;
+use crate::directory_watch::DirectoryWatchCommand;
+use crate::directory_watch::parse_watch_command;
 use crate::goal_display::GOAL_USAGE;
 use crate::goal_files::GoalDraft;
+use crate::monitor::MonitorCommand;
+use crate::monitor::parse_monitor_command;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlashCommandDispatchSource {
@@ -37,6 +41,7 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to return to the main thread first.";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
+const AGENT_MESSAGES_USAGE: &str = "Usage: /agent-messages [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
 
 impl ChatWidget {
@@ -315,6 +320,10 @@ impl ChatWidget {
                 self.open_model_popup();
                 self.defer_input_until_settings_applied();
             }
+            SlashCommand::Delegation => {
+                self.open_delegation_popup();
+                self.defer_input_until_settings_applied();
+            }
             SlashCommand::Plan => {
                 self.apply_plan_slash_command();
             }
@@ -342,8 +351,12 @@ impl ChatWidget {
             SlashCommand::Agents => {
                 self.app_event_tx.send(AppEvent::OpenAgentsOverview);
             }
-            SlashCommand::MultiAgents => {
+            SlashCommand::Agent | SlashCommand::MultiAgents => {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
+            }
+            SlashCommand::AgentMessages => {
+                self.app_event_tx
+                    .send(AppEvent::SetAgentMessageFeed { enabled: None });
             }
             SlashCommand::Permissions => {
                 if self.remote_connection.is_some() {
@@ -436,6 +449,10 @@ impl ChatWidget {
                 let enabled = self.toggle_raw_output_mode_and_notify();
                 self.emit_raw_output_mode_changed(enabled);
             }
+            SlashCommand::Math => {
+                self.add_info_message(crate::math_render::set_mode("toggle"), /*hint*/ None);
+                self.app_event_tx.send(AppEvent::MathRendered);
+            }
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
                 let tx = self.app_event_tx.clone();
@@ -527,6 +544,15 @@ impl ChatWidget {
             }
             SlashCommand::Stop => {
                 self.clean_background_terminals();
+            }
+            SlashCommand::Watch => {
+                self.app_event_tx.send(AppEvent::DirectoryWatchCommand(
+                    DirectoryWatchCommand::Status,
+                ));
+            }
+            SlashCommand::Monitor => {
+                self.app_event_tx
+                    .send(AppEvent::MonitorCommand(MonitorCommand::List));
             }
             SlashCommand::MemoryDrop => {
                 self.add_app_server_stub_message("Memory maintenance");
@@ -783,6 +809,13 @@ impl ChatWidget {
                 }
                 _ => self.add_error_message("Usage: /keymap [debug]".to_string()),
             },
+            SlashCommand::Math => match trimmed.to_ascii_lowercase().as_str() {
+                mode @ ("on" | "off") => {
+                    self.add_info_message(crate::math_render::set_mode(mode), /*hint*/ None);
+                    self.app_event_tx.send(AppEvent::MathRendered);
+                }
+                _ => self.add_error_message("Usage: /math [on|off]".to_string()),
+            },
             SlashCommand::Raw => match trimmed.to_ascii_lowercase().as_str() {
                 "on" => {
                     self.set_raw_output_mode_and_notify(/*enabled*/ true);
@@ -793,6 +826,15 @@ impl ChatWidget {
                     self.emit_raw_output_mode_changed(/*enabled*/ false);
                 }
                 _ => self.add_error_message(RAW_USAGE.to_string()),
+            },
+            SlashCommand::AgentMessages => match trimmed.to_ascii_lowercase().as_str() {
+                "on" => self.app_event_tx.send(AppEvent::SetAgentMessageFeed {
+                    enabled: Some(true),
+                }),
+                "off" => self.app_event_tx.send(AppEvent::SetAgentMessageFeed {
+                    enabled: Some(false),
+                }),
+                _ => self.add_error_message(AGENT_MESSAGES_USAGE.to_string()),
             },
             SlashCommand::Rename if !trimmed.is_empty() => {
                 if !self.ensure_thread_rename_allowed() {
@@ -1001,6 +1043,18 @@ impl ChatWidget {
                 self.app_event_tx
                     .send(AppEvent::ResumeSessionByIdOrName(args));
             }
+            SlashCommand::Watch => match parse_watch_command(trimmed, self.config.cwd.as_path()) {
+                Ok(command) => self
+                    .app_event_tx
+                    .send(AppEvent::DirectoryWatchCommand(command)),
+                Err(err) => self.add_error_message(err),
+            },
+            SlashCommand::Monitor => {
+                match parse_monitor_command(trimmed, self.config.cwd.as_path()) {
+                    Ok(command) => self.app_event_tx.send(AppEvent::MonitorCommand(command)),
+                    Err(err) => self.add_error_message(err),
+                }
+            }
             SlashCommand::Pets
                 if matches!(
                     args.trim().to_ascii_lowercase().as_str(),
@@ -1171,6 +1225,9 @@ impl ChatWidget {
             | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop
+            | SlashCommand::Watch
+            | SlashCommand::Monitor
+            | SlashCommand::AgentMessages
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate
             | SlashCommand::Mcp
@@ -1179,6 +1236,7 @@ impl ChatWidget {
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::Math
             | SlashCommand::Vim
             | SlashCommand::Diff
             | SlashCommand::App
@@ -1209,8 +1267,10 @@ impl ChatWidget {
             | SlashCommand::Compact
             | SlashCommand::Review
             | SlashCommand::Model
+            | SlashCommand::Delegation
             | SlashCommand::Plan
             | SlashCommand::Goal
+            | SlashCommand::Agent
             | SlashCommand::Side
             | SlashCommand::Btw
             | SlashCommand::Keymap

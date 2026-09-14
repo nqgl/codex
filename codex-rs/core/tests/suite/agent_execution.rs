@@ -24,6 +24,7 @@ use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::time::Duration;
+use std::time::Instant;
 use test_case::test_case;
 
 const FIRST_PROMPT: &str = "spawn the first worker";
@@ -91,24 +92,53 @@ async fn mount_completed_worker(
     server: &wiremock::MockServer,
     task: &'static str,
     parent_call_id: &'static str,
-) -> ResponseMock {
-    let response_id = format!("resp-worker-{parent_call_id}");
-    mount_sse_once_match(
+) -> (ResponseMock, ResponseMock) {
+    let child_response_id = format!("resp-worker-{parent_call_id}");
+    let child = mount_sse_once_match(
         server,
         move |request: &wiremock::Request| {
             body_contains(request, task) && !has_function_call_output(request, parent_call_id)
         },
         sse(vec![
-            ev_response_created(&response_id),
+            ev_response_created(&child_response_id),
             ev_assistant_message(&format!("msg-worker-{parent_call_id}"), "worker completed"),
-            ev_completed(&response_id),
+            ev_completed(&child_response_id),
         ]),
     )
-    .await
+    .await;
+    let parent_wake = mount_sse_once_match(
+        server,
+        |request: &wiremock::Request| body_contains(request, "Message Type: FINAL_ANSWER"),
+        sse(vec![
+            ev_response_created("resp-parent-child-complete"),
+            ev_assistant_message("msg-parent-child-complete", "completion received"),
+            ev_completed("resp-parent-child-complete"),
+        ]),
+    )
+    .await;
+    (child, parent_wake)
+}
+
+async fn wait_for_parent_completion_wake(
+    parent: &codex_core::CodexThread,
+    response: &ResponseMock,
+) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if !response.requests().is_empty() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for the parent completion wake");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    wait_for_event(parent, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn v2_nested_spawn_checks_shared_active_execution_capacity() -> Result<()> {
+async fn v2_nested_spawn_uses_runtime_updated_capacity() -> Result<()> {
     let server = start_mock_server().await;
     let first_args = serde_json::to_string(&json!({
         "message": FIRST_TASK,
@@ -182,9 +212,24 @@ async fn v2_nested_spawn_checks_shared_active_execution_capacity() -> Result<()>
                 .features
                 .enable(Feature::MultiAgentV2)
                 .expect("test config should allow feature update");
-            config.multi_agent_v2.max_concurrent_threads_per_session = 2;
+            config.multi_agent_v2.max_concurrent_threads_per_session = 3;
         });
     let test = builder.build(&server).await?;
+    submit_thread_settings(
+        &test.codex,
+        ThreadSettingsOverrides {
+            multi_agent_max_concurrent_threads: Some(2),
+            ..Default::default()
+        },
+    )
+    .await?;
+    assert_eq!(
+        test.codex
+            .config_snapshot()
+            .await
+            .multi_agent_max_concurrent_threads,
+        2
+    );
     test.submit_turn(FIRST_PROMPT).await?;
 
     let second_output = tokio::time::timeout(Duration::from_secs(2), async {
@@ -244,7 +289,19 @@ async fn child_turn_start_preserves_root_attribution() -> Result<()> {
             }
         }
     }
-    worker.single_request();
+    worker.0.single_request();
+    // Completion can wake the parent in this harness; that later root turn is not
+    // the turn that spawned the child. Compare attribution only for the spawn turn.
+    let initial_root_turn_id = starts
+        .iter()
+        .find(|(id, _)| *id == test.session_configured.thread_id)
+        .expect("root turn")
+        .1
+        .turn_id
+        .clone();
+    starts.retain(|(id, event)| {
+        *id != test.session_configured.thread_id || event.turn_id == initial_root_turn_id
+    });
     assert_eq!(starts.len(), 2);
     assert_ne!(starts[0].1.turn_id, starts[1].1.turn_id);
     let root_turn_id = &starts
@@ -290,7 +347,8 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
         json!({ "message": FIRST_TASK, "task_name": "first", "fork_turns": "none" }),
     )
     .await;
-    mount_completed_worker(&server, FIRST_TASK, "first-call").await;
+    let (_first_worker_request, first_parent_wake) =
+        mount_completed_worker(&server, FIRST_TASK, "first-call").await;
 
     mount_root_collaboration_call(
         &server,
@@ -300,7 +358,8 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
         json!({ "message": SECOND_TASK, "task_name": "replacement", "fork_turns": "none" }),
     )
     .await;
-    mount_completed_worker(&server, SECOND_TASK, "replacement-call").await;
+    let (_replacement_worker_request, replacement_parent_wake) =
+        mount_completed_worker(&server, SECOND_TASK, "replacement-call").await;
 
     mount_root_collaboration_call(
         &server,
@@ -310,7 +369,7 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
         json!({ "target": "first", "message": FOLLOWUP_TASK }),
     )
     .await;
-    let reloaded_worker_request =
+    let (reloaded_worker_request, reloaded_parent_wake) =
         mount_completed_worker(&server, FOLLOWUP_TASK, "followup-call").await;
 
     let mut builder = test_codex()
@@ -425,6 +484,7 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
+    wait_for_parent_completion_wake(&test.codex, &first_parent_wake).await?;
 
     let mut parent_environment = child_environment.clone();
     if reload == ResidencyReload::OwnerRevokesWorkspaceRoot {
@@ -458,6 +518,7 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
+    wait_for_parent_completion_wake(&test.codex, &replacement_parent_wake).await?;
     assert!(
         test.thread_manager
             .get_thread(first_thread_id)
@@ -527,6 +588,7 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
+    wait_for_parent_completion_wake(&test.codex, &reloaded_parent_wake).await?;
     assert_eq!(
         reloaded_worker
             .config_snapshot()

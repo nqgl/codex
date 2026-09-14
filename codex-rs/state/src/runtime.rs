@@ -53,6 +53,9 @@ mod rollout_migration;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod thread_attachments;
+mod thread_monitors;
+#[cfg(test)]
+mod thread_monitors_tests;
 mod thread_section_order;
 mod thread_sections;
 mod threads;

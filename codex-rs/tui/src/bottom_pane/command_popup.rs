@@ -387,7 +387,9 @@ mod tests {
             vec![
                 "model".to_string(),
                 "memories".to_string(),
+                "math".to_string(),
                 "mention".to_string(),
+                "monitor".to_string(),
                 "mcp".to_string()
             ]
         );
@@ -595,5 +597,40 @@ mod tests {
             !cmds.iter().any(|name| name.starts_with("debug")),
             "expected no /debug* command in popup menu, got {cmds:?}"
         );
+    }
+    #[test]
+    fn watch_command_popup_snapshot() {
+        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
+        popup.on_composer_text_change("/watch".to_string());
+
+        let width = 72;
+        let area = Rect::new(
+            /*x*/ 0,
+            /*y*/ 0,
+            width,
+            popup.calculate_required_height(width),
+        );
+        let mut buf = Buffer::empty(area);
+        popup.render_ref(area, &mut buf);
+
+        insta::assert_snapshot!("command_popup_watch", format!("{buf:?}"));
+    }
+
+    #[test]
+    fn monitor_command_popup_snapshot() {
+        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
+        popup.on_composer_text_change("/monitor".to_string());
+
+        let width = 72;
+        let area = Rect::new(
+            /*x*/ 0,
+            /*y*/ 0,
+            width,
+            popup.calculate_required_height(width),
+        );
+        let mut buf = Buffer::empty(area);
+        popup.render_ref(area, &mut buf);
+
+        insta::assert_snapshot!("command_popup_monitor", format!("{buf:?}"));
     }
 }

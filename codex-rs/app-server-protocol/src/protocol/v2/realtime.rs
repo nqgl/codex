@@ -5,6 +5,7 @@ use codex_protocol::protocol::ConversationTextRole;
 use codex_protocol::protocol::RealtimeAudioFrame as CoreRealtimeAudioFrame;
 use codex_protocol::protocol::RealtimeConversationVersion;
 use codex_protocol::protocol::RealtimeOutputModality;
+use codex_protocol::protocol::RealtimeSessionType;
 use codex_protocol::protocol::RealtimeVoice;
 use codex_protocol::protocol::RealtimeVoicesList;
 use codex_protocol::realtime::BemItemPresentation as CoreBemItemPresentation;
@@ -227,6 +228,9 @@ pub struct ThreadRealtimeStartParams {
     /// Overrides the configured realtime model for this session only.
     #[ts(optional = nullable)]
     pub model: Option<String>,
+    /// Overrides the configured realtime session type for this session only.
+    #[ts(optional = nullable)]
+    pub session_type: Option<RealtimeSessionType>,
     /// Selects text or audio output for the realtime session. Transport and voice stay
     /// independent so clients can choose how they connect separately from what the model emits.
     pub output_modality: RealtimeOutputModality,
@@ -304,6 +308,9 @@ pub struct ThreadRealtimeStartResponse {}
 pub struct ThreadRealtimeAppendAudioParams {
     pub thread_id: String,
     pub audio: ThreadRealtimeAudioChunk,
+    /// Finish the audio turn after this chunk. An empty chunk commits buffered audio only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub commit: bool,
 }
 
 /// EXPERIMENTAL - response for appending realtime audio input.

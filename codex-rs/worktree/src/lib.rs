@@ -8,6 +8,7 @@ use crate::git::git_output;
 use crate::git::git_path;
 use crate::git::git_path_from_bytes;
 use crate::git::git_stdout;
+use crate::git::worktree_porcelain;
 use crate::paths::allocate_worktree_root;
 use crate::paths::remove_empty_bucket;
 use anyhow::Context;
@@ -175,15 +176,8 @@ impl WorktreeManager {
         let managed_root =
             dunce::canonicalize(&self.settings.root).unwrap_or_else(|_| self.settings.root.clone());
         let source_common_dir = resolve_git_path(&source_root, "--git-common-dir")?;
-        let output = git_output(
-            &source_cwd,
-            GitOperation::Metadata,
-            ["worktree", "list", "--porcelain", "-z"],
-        )?;
-        let fields = output
-            .stdout
-            .split(|byte| *byte == b'\0')
-            .collect::<Vec<_>>();
+        let output = worktree_porcelain(&source_cwd)?;
+        let fields = output.split(|byte| *byte == b'\0').collect::<Vec<_>>();
         let mut worktrees = Vec::new();
 
         for entry in fields.split(|field| field.is_empty()) {

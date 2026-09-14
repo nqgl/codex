@@ -7,6 +7,14 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// Built-in policy controlling when Codex may delegate work to sub-agents.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiAgentModeConfig {
+    ExplicitRequestOnly,
+    Proactive,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ToolRegistryConfigToml {
@@ -276,6 +284,10 @@ pub struct MultiAgentV2ConfigToml {
     pub subagent_developer_instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multi_agent_mode_hint_text: Option<String>,
+    /// Overrides the effort-derived delegation policy. When unset, Ultra uses proactive
+    /// delegation and other reasoning efforts require an explicit request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<MultiAgentModeConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(length(min = 1, max = 64), regex(pattern = r"^[a-zA-Z0-9_-]+$"))]
     pub tool_namespace: Option<String>,

@@ -1,0 +1,12 @@
+---
+source: tui/src/app/tests.rs
+expression: "render_bottom_popup(&app.chat_widget,\n80).replace(&main_thread_id.to_string(),\n\"[main]\").replace(&recently_active_id.to_string(),\n\"[reviewer]\").replace(&newest_quiet_id.to_string(), \"[scout]\")"
+---
+  Subagents
+  Select an agent to watch. ⌥ + ← previous, ⌥ + → next.
+
+› 1. • Main [default] (current)  [main]
+  2. • Reviewer [worker]         [reviewer]
+  3. • Scout [explorer]          [scout]
+
+  Press enter to confirm or esc to go back

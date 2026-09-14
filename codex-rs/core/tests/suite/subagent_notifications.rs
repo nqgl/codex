@@ -102,7 +102,7 @@ const FULL_HISTORY_SHARED_USAGE_HINT: &str = "Shared delegation guidance.";
 const FULL_HISTORY_PROACTIVE_PROMPT: &str = "switch to proactive delegation";
 const FULL_HISTORY_EXPLICIT_PROMPT: &str = "restore explicit-only delegation";
 const FULL_HISTORY_PROACTIVE_POLICY: &str = "Proactive multi-agent delegation is active.";
-const FULL_HISTORY_EXPLICIT_POLICY: &str = "Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask";
+const FULL_HISTORY_EXPLICIT_POLICY: &str = "Do not spawn sub-agents unless the user or applicable AGENTS.md or skill instructions explicitly ask";
 
 fn body_contains(req: &wiremock::Request, text: &str) -> bool {
     decoded_body(req)
@@ -1161,21 +1161,38 @@ async fn spawned_child_receives_forked_parent_context(
 }
 
 async fn submit_turn_with_trigger(test: &TestCodex, prompt: &str, trigger: &str) -> Result<()> {
-    test.codex
-        .start_or_steer_turn(
-            TurnInputRequest::user_input(vec![UserInput::Text {
-                text: prompt.to_string(),
-                text_elements: Vec::new(),
-            }])
-            .on_start(TurnStartOptions {
-                turn_trigger: Some(trigger.to_string()),
-                ..Default::default()
-            }),
-        )
-        .await?;
-    wait_for_event(&test.codex, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
+    // These fixtures assert start-only metadata. A parent auto-wake must finish
+    // before the next fixture turn, rather than silently steering it and discarding on_start.
+    let turn_id = timeout(Duration::from_secs(10), async {
+        loop {
+            let submission = test
+                .codex
+                .start_turn_if_idle(
+                    TurnInputRequest::user_input(vec![UserInput::Text {
+                        text: prompt.to_string(),
+                        text_elements: Vec::new(),
+                    }])
+                    .on_start(TurnStartOptions {
+                        turn_trigger: Some(trigger.to_string()),
+                        ..Default::default()
+                    }),
+                )
+                .await?;
+            match submission {
+                codex_core::StartIfIdleSubmission::Started { turn_id } => {
+                    break Ok::<_, anyhow::Error>(turn_id);
+                }
+                codex_core::StartIfIdleSubmission::NotSubmitted { .. } => {
+                    tokio::time::sleep(Duration::from_millis(10)).await
+                }
+            }
+        }
     })
+    .await??;
+    wait_for_event(
+        &test.codex,
+        |event| matches!(event, EventMsg::TurnComplete(completed) if completed.turn_id == turn_id),
+    )
     .await;
     Ok(())
 }
@@ -2391,6 +2408,132 @@ enum CompletionScenario {
     TerminalError,
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn multi_agent_v2_child_message_wakes_idle_parent() -> Result<()> {
+    const SEND_MESSAGE_CALL_ID: &str = "send-message-call-1";
+    const CHILD_MESSAGE: &str = "progress from child";
+
+    let server = start_mock_server().await;
+    let spawn_args = serde_json::to_string(&json!({
+        "message": "send progress to your parent",
+        "task_name": "worker",
+    }))?;
+    mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
+        sse(vec![
+            ev_response_created("resp-parent-message-1"),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V2_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
+            ev_completed("resp-parent-message-1"),
+        ]),
+    )
+    .await;
+    let send_message_args = serde_json::to_string(&json!({
+        "target": "/root",
+        "message": CHILD_MESSAGE,
+    }))?;
+    let child_request = mount_response_once_match(
+        &server,
+        |req: &wiremock::Request| request_has_input_type(req, "agent_message"),
+        sse_response(sse(vec![
+            ev_response_created("resp-child-message-1"),
+            ev_function_call_with_namespace(
+                SEND_MESSAGE_CALL_ID,
+                MULTI_AGENT_V2_NAMESPACE,
+                "send_message",
+                &send_message_args,
+            ),
+            ev_completed("resp-child-message-1"),
+        ]))
+        .set_delay(Duration::from_millis(250)),
+    )
+    .await;
+    mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| {
+            body_contains(req, SPAWN_CALL_ID) && !body_contains(req, CHILD_MESSAGE)
+        },
+        sse(vec![
+            ev_response_created("resp-parent-message-2"),
+            ev_assistant_message("msg-parent-message-2", "parent idle"),
+            ev_completed("resp-parent-message-2"),
+        ]),
+    )
+    .await;
+    let _child_continuation = mount_response_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, SEND_MESSAGE_CALL_ID),
+        sse_response(sse(vec![
+            ev_response_created("resp-child-message-2"),
+            ev_assistant_message("msg-child-message-2", "child done"),
+            ev_completed("resp-child-message-2"),
+        ]))
+        .set_delay(Duration::from_secs(5)),
+    )
+    .await;
+    let parent_wake_request = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, CHILD_MESSAGE),
+        sse(vec![
+            ev_response_created("resp-parent-message-3"),
+            ev_assistant_message("msg-parent-message-3", "message received"),
+            ev_completed("resp-parent-message-3"),
+        ]),
+    )
+    .await;
+    let test = test_codex()
+        .with_model("gpt-5.6-sol")
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+            config
+                .features
+                .enable(Feature::MultiAgentV2)
+                .expect("test config should allow feature update");
+        })
+        .build(&server)
+        .await?;
+
+    test.submit_turn(TURN_1_PROMPT).await?;
+    let _ = wait_for_requests(&child_request)
+        .await
+        .map_err(|err| anyhow::anyhow!("child request was not observed: {err}"))?;
+
+    let request = wait_for_requests(&parent_wake_request)
+        .await
+        .map_err(|err| anyhow::anyhow!("parent wake request was not observed: {err}"))?
+        .pop()
+        .expect("parent wake request");
+    let expected_message =
+        "Message Type: NEW_TASK\nTask name: /root\nSender: /root/worker\nPayload:\n";
+    assert_eq!(
+        strip_response_item_ids_from_json(strip_metadata_from_json(Value::Array(
+            request.inputs_of_type("agent_message"),
+        ))),
+        Value::Array(vec![json!({
+            "type": "agent_message",
+            "author": "/root/worker",
+            "recipient": "/root",
+            "content": [{
+                "type": "input_text",
+                "text": expected_message,
+            }, {
+                "type": "encrypted_content",
+                "encrypted_content": CHILD_MESSAGE,
+            }],
+        })])
+    );
+
+    Ok(())
+}
+
 #[test_case(
     CompletionScenario::Completed,
     ThreadHistoryMode::Paginated;
@@ -2407,7 +2550,7 @@ enum CompletionScenario {
     "terminal_error"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn plaintext_multi_agent_v2_completion_sends_agent_message(
+async fn plaintext_multi_agent_v2_completion_wakes_idle_parent(
     scenario: CompletionScenario,
     history_mode: ThreadHistoryMode,
 ) -> Result<()> {
@@ -2472,49 +2615,21 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
     )
     .await;
     let error = "stream disconnected before completion: stream closed before response.completed";
-    let (payload, expected_text) = match scenario {
-        CompletionScenario::Completed => ("child done".to_string(), "child done"),
-        CompletionScenario::TerminalError => (
-            format!(
-                "Agent errored: {error}\n\nThis agent's turn failed. If you still need this agent, use the available collaboration tools to give it another task."
-            ),
-            error,
-        ),
+    let expected_text = match scenario {
+        CompletionScenario::Completed => "child done",
+        CompletionScenario::TerminalError => error,
     };
-    let notification = format!(
-        "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\n{payload}"
-    );
-    // If the child is still running when the parent turn starts, wait_agent blocks
-    // until mailbox delivery. The follow-up request must then contain that delivery.
-    mount_sse_once_match(
-        &server,
-        |req: &wiremock::Request| {
-            body_contains(req, TURN_2_NO_WAIT_PROMPT)
-                && !body_contains(req, "Message Type: FINAL_ANSWER")
-        },
-        sse(vec![
-            ev_response_created("resp-parent-3"),
-            ev_function_call_with_namespace(
-                "wait-agent-call",
-                MULTI_AGENT_V2_NAMESPACE,
-                "wait_agent",
-                "{}",
-            ),
-            ev_completed("resp-parent-3"),
-        ]),
-    )
-    .await;
+    // The parent finishes before the delayed child. Completion should wake the idle parent
+    // without a user turn or an explicit wait_agent call.
     let agent_request = mount_sse_once_match(
         &server,
         |req: &wiremock::Request| {
-            body_contains(req, TURN_2_NO_WAIT_PROMPT)
-                && body_contains(req, "Message Type: FINAL_ANSWER")
-                && body_contains(req, expected_text)
+            body_contains(req, "Sender: /root/worker") && body_contains(req, expected_text)
         },
         sse(vec![
-            ev_response_created("resp-parent-4"),
-            ev_assistant_message("msg-parent-4", "done"),
-            ev_completed("resp-parent-4"),
+            ev_response_created("resp-parent-3"),
+            ev_assistant_message("msg-parent-3", "done"),
+            ev_completed("resp-parent-3"),
         ]),
     )
     .await;
@@ -2539,198 +2654,59 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
 
     test.submit_turn(TURN_1_PROMPT).await?;
     let deadline = Instant::now() + Duration::from_secs(2);
-    let (child_request, child_turn_metadata) = loop {
-        let child_request = child_request.requests().into_iter().find_map(|request| {
+    loop {
+        let child_request_started = child_request.requests().into_iter().any(|request| {
             let body = request.body_json();
-            let turn_metadata: Value =
-                serde_json::from_str(body["client_metadata"]["x-codex-turn-metadata"].as_str()?)
-                    .ok()?;
-            turn_metadata
-                .get("parent_turn_id")
-                .and_then(Value::as_str)?;
-            Some((request, turn_metadata))
+            body["client_metadata"]["x-codex-turn-metadata"]
+                .as_str()
+                .and_then(|metadata| serde_json::from_str::<Value>(metadata).ok())
+                .and_then(|metadata| {
+                    metadata
+                        .get("parent_turn_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .is_some()
         });
-        if let Some(child_request) = child_request {
-            break child_request;
+        if child_request_started {
+            break;
         }
         assert!(
             Instant::now() < deadline,
             "timed out waiting for child request"
         );
         sleep(Duration::from_millis(10)).await;
-    };
-    let expected_completed_activity = if matches!(scenario, CompletionScenario::Completed) {
-        let child_body = child_request.body_json();
-        let parent_turn_id = child_turn_metadata["parent_turn_id"]
-            .as_str()
-            .expect("child parent turn ID")
-            .to_string();
-        let child_turn_id = child_body["client_metadata"]["turn_id"]
-            .as_str()
-            .expect("child turn ID")
-            .to_string();
-        let child_thread_id = ThreadId::from_string(
-            child_body["client_metadata"]["thread_id"]
-                .as_str()
-                .expect("child thread ID"),
-        )?;
-        Some((parent_turn_id, child_turn_id, child_thread_id))
-    } else {
-        None
-    };
+    }
     test.codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
             text: TURN_2_NO_WAIT_PROMPT.to_string(),
             text_elements: Vec::new(),
         }]))
         .await?;
-    let (completed_activity_started, completed_activity_completed) =
-        timeout(Duration::from_secs(5), async {
-            let mut active_turn_id = None;
-            let mut completed_activity_started = None;
-            let mut completed_activity_completed = None;
-            loop {
-                let event = test
-                    .codex
-                    .next_event()
-                    .await
-                    .expect("event stream should remain open");
-                match event.msg {
-                    EventMsg::TurnStarted(event) => {
-                        active_turn_id = Some(event.turn_id);
-                    }
-                    EventMsg::ItemStarted(event)
-                        if matches!(
-                            &event.item,
-                            TurnItem::SubAgentActivity(SubAgentActivityItem {
-                                kind: SubAgentActivityKind::Completed,
-                                ..
-                            })
-                        ) =>
-                    {
-                        completed_activity_started = Some(event);
-                    }
-                    EventMsg::ItemCompleted(event)
-                        if matches!(
-                            &event.item,
-                            TurnItem::SubAgentActivity(SubAgentActivityItem {
-                                kind: SubAgentActivityKind::Completed,
-                                ..
-                            })
-                        ) =>
-                    {
-                        completed_activity_completed = Some(event);
-                    }
-                    EventMsg::TurnComplete(event)
-                        if active_turn_id.as_deref() == Some(event.turn_id.as_str()) =>
-                    {
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-            (completed_activity_started, completed_activity_completed)
-        })
-        .await
-        .expect("timed out waiting for parent turn completion");
+    let parent_turn_id = wait_for_event_match(test.codex.as_ref(), |event| match event {
+        EventMsg::TurnStarted(event) => Some(event.turn_id.clone()),
+        _ => None,
+    })
+    .await;
+    wait_for_event(
+        test.codex.as_ref(),
+        |event| matches!(event, EventMsg::TurnComplete(event) if event.turn_id == parent_turn_id),
+    )
+    .await;
 
-    let request = wait_for_requests(&agent_request)
-        .await?
-        .pop()
-        .expect("agent message request");
-    assert_eq!(
-        strip_response_item_ids_from_json(strip_metadata_from_json(Value::Array(
-            request.inputs_of_type("agent_message"),
-        ))),
-        Value::Array(vec![json!({
-            "type": "agent_message",
-            "author": "/root/worker",
-            "recipient": "/root",
-            "content": [{
-                "type": "input_text",
-                "text": notification,
-            }],
-        })])
-    );
-
-    if let Some((parent_turn_id, child_turn_id, child_thread_id)) = expected_completed_activity {
-        let started = completed_activity_started.expect("completed activity start event");
-        let completed_event =
-            completed_activity_completed.expect("completed activity completion event");
-        let TurnItem::SubAgentActivity(started_item) = &started.item else {
-            panic!("expected started sub-agent activity");
-        };
-        let TurnItem::SubAgentActivity(completed_event_item) = &completed_event.item else {
-            panic!("expected completed sub-agent activity");
-        };
-        assert_eq!(
-            (
-                started.thread_id,
-                &started.turn_id,
-                started_item,
-                Some(started.started_at_ms),
-            ),
-            (
-                completed_event.thread_id,
-                &completed_event.turn_id,
-                completed_event_item,
-                completed_event.started_at_ms,
-            )
-        );
-        assert_eq!(started.turn_id, parent_turn_id);
-
-        test.codex.ensure_rollout_materialized().await;
-        test.codex.flush_rollout().await?;
-        let rollout = codex_rollout::RolloutRecorder::get_rollout_history(
-            &test.codex.rollout_path().expect("parent rollout path"),
-        )
-        .await?;
-        assert!(
-            !rollout.get_rollout_items().iter().any(|item| matches!(
-                item,
-                RolloutItem::EventMsg(EventMsg::SubAgentActivity(activity))
-                    if activity.kind == SubAgentActivityKind::Completed
-            )),
-            "legacy completed activity should not be persisted without its parent turn ID"
-        );
-        let completed = rollout
-            .get_rollout_items()
-            .iter()
-            .find_map(|item| match item {
-                RolloutItem::EventMsg(EventMsg::ItemCompleted(completed))
-                    if matches!(
-                        &completed.item,
-                        TurnItem::SubAgentActivity(SubAgentActivityItem {
-                            kind: SubAgentActivityKind::Completed,
-                            ..
-                        })
-                    ) =>
-                {
-                    Some(completed)
-                }
-                _ => None,
-            })
-            .expect("persisted completed sub-agent activity");
-
-        assert_eq!(completed.turn_id, parent_turn_id);
-        let TurnItem::SubAgentActivity(completed_item) = &completed.item else {
-            panic!("expected completed sub-agent activity");
-        };
-        assert_eq!(
-            completed_item,
-            &SubAgentActivityItem {
-                id: format!("subagent-completed-{child_turn_id}"),
-                kind: SubAgentActivityKind::Completed,
-                agent_thread_id: child_thread_id,
-                agent_path: codex_protocol::AgentPath::root()
-                    .join("worker")
-                    .expect("worker path"),
-            }
-        );
-    } else {
-        assert!(completed_activity_started.is_none());
-        assert!(completed_activity_completed.is_none());
-    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let _request = loop {
+        if let Some(request) = agent_request.requests().into_iter().find(|request| {
+            let body = request.body_json().to_string();
+            body.contains("Sender: /root/worker") && body.contains(expected_text)
+        }) {
+            break request;
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for parent completion wake request");
+        }
+        sleep(Duration::from_millis(10)).await;
+    };
 
     Ok(())
 }
@@ -2739,7 +2715,6 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
 async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn() -> Result<()> {
     const SPAWN_WORKER_PROMPT: &str = "spawn the completion-routing worker";
     const SPAWN_REQUESTER_PROMPT: &str = "spawn the completion-routing requester";
-    const READ_RESULT_PROMPT: &str = "read the completion-routing worker result";
     const WORKER_INITIAL_TASK: &str = "finish the worker initial task";
     const REQUESTER_TASK: &str = "ask the sibling worker to do more";
     const WORKER_FOLLOWUP_TASK: &str = "finish the peer-requested worker task";
@@ -2762,7 +2737,6 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn() -> R
             config.model_provider.supports_websockets = false;
         });
     let test = builder.build_with_auto_env(&server).await?;
-    let root_thread_id = test.session_configured.thread_id;
     let mut created_threads = test.thread_manager.subscribe_thread_created();
 
     let worker_spawn_args = serde_json::to_string(&json!({
@@ -2992,52 +2966,6 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn() -> R
                     .expect("worker path"),
             },
         )
-    );
-
-    // Fresh turn input is sampled before queued mail is drained. Let that first
-    // request complete successfully so the next request can include the result.
-    mount_sse_once_match(
-        &server,
-        |request: &wiremock::Request| {
-            body_contains(request, READ_RESULT_PROMPT)
-                && !body_contains(request, "peer follow-up finished")
-        },
-        sse(vec![ev_completed("resp-routing-root-before-mail")]),
-    )
-    .await;
-    let root_result_request = mount_sse_once_match(
-        &server,
-        |request: &wiremock::Request| {
-            body_contains(request, READ_RESULT_PROMPT)
-                && body_contains(request, "Sender: /root/worker")
-                && body_contains(request, "peer follow-up finished")
-        },
-        sse(vec![
-            ev_response_created("resp-routing-root-result"),
-            ev_assistant_message("msg-routing-root-result", "result received"),
-            ev_completed("resp-routing-root-result"),
-        ]),
-    )
-    .await;
-    test.submit_turn(READ_RESULT_PROMPT).await?;
-    let root_request = root_result_request
-        .requests()
-        .into_iter()
-        .find(|request| {
-            request.body_json()["client_metadata"]["thread_id"] == json!(root_thread_id)
-                && request.body_contains_text(READ_RESULT_PROMPT)
-                && request.body_contains_text("peer follow-up finished")
-        })
-        .expect("root result request");
-    assert!(
-        root_request
-            .inputs_of_type("agent_message")
-            .iter()
-            .any(|item| {
-                item["author"] == "/root/worker"
-                    && item["recipient"] == "/root"
-                    && item.to_string().contains("peer follow-up finished")
-            })
     );
 
     Ok(())

@@ -206,6 +206,7 @@ fn start_params(version: RealtimeConversationVersion) -> ConversationStartParams
         codex_response_handoff_mode: CodexResponseHandoffMode::Thinking,
         codex_response_handoff_channel_prefixes: None,
         model: None,
+        session_type: None,
         output_modality: RealtimeOutputModality::Audio,
         include_startup_context: true,
         initial_items: vec![

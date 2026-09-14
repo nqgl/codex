@@ -14,6 +14,10 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.handle_dictation_key_event(key_event) {
+            return;
+        }
+
         if self.handle_question_key(key_event) {
             return;
         }

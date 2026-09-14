@@ -116,11 +116,12 @@ rollout_summaries/2026-02-17T21-23-02-LN3m-example.md:10-12|note=[weekly report 
 
 Updating memories:
 
-You can update the memories **only** when explicitly asked by the user. This must always come from a direct request from the user.
-- Write your update in {{ base_path }}/extensions/ad_hoc/notes/
-- Each update must be one small file containing what you want to add/delete/update from the memories.
-- The name of this file must be `<timestamp>-<short slug>.md`
-- Do not try to edit the memory files yourself, only add one update note in {{ base_path }}/extensions/ad_hoc/notes/
+Memory updates happen only at the user's direct request — the write path
+is deliberately user-gated so memory can't drift from ambient
+conversation. When asked: write one small note file in
+{{ base_path }}/extensions/ad_hoc/notes/ named `<timestamp>-<short slug>.md`
+describing what to add/delete/update. The memory files themselves belong
+to the consolidation phase, so the note is your whole contribution.
 
 ========= MEMORY_SUMMARY BEGINS =========
 {{ memory_summary }}

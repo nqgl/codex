@@ -1,0 +1,11 @@
+---
+source: tui/src/math_render/math_render_tests.rs
+expression: text
+---
+Before
+
+\[
+x^2+y^2=1
+\]
+
+After.

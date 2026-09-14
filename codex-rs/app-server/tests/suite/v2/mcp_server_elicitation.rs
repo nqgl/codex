@@ -842,7 +842,13 @@ impl ElicitationRoundTripFixture {
         );
         let mut guardian_review_events = 0;
         loop {
-            let message = timeout(DEFAULT_READ_TIMEOUT, self.mcp.read_next_message()).await??;
+            let message = match timeout(DEFAULT_READ_TIMEOUT, self.mcp.read_next_message()).await {
+                Ok(message) => message?,
+                Err(error) => anyhow::bail!(
+                    "timed out waiting for completion after {guardian_review_events} Guardian events and {} response requests: {error}",
+                    self.response_mock.requests().len()
+                ),
+            };
             let JSONRPCMessage::Notification(notification) = message else {
                 continue;
             };
@@ -1178,11 +1184,11 @@ impl ServerHandler for ElicitationAppsMcpServer {
                                     "message": format!(
                                         "This action was rejected due to unacceptable risk.\n\
                                          Reason: {GUARDIAN_DENIAL_RATIONALE}\n\
-                                         The agent must not attempt to achieve the same outcome via workaround, \
-                                         indirect execution, or policy circumvention. \
-                                         Proceed only with a materially safer alternative, \
-                                         or if the user explicitly approves the action after being informed of the risk. \
-                                         Otherwise, stop and request user input."
+                                         This action was denied. Reaching the same outcome via workaround, \
+                                         indirect execution, or circumvention would bypass the denial rather \
+                                         than resolve it. Proceed only with a materially safer alternative, \
+                                         or with the user's explicit approval after they've been informed of the risk; \
+                                         otherwise stop and ask the user for direction."
                                     ),
                                 },
                             }),

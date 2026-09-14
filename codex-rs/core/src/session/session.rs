@@ -28,6 +28,7 @@ use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider::SharedModelProvider;
 use codex_protocol::SessionId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::permissions::FileSystemPath;
@@ -285,6 +286,17 @@ impl SessionConfiguration {
             profile_workspace_roots: permission_profile.profile_workspace_roots().to_vec(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.step_settings.collaboration_mode.reasoning_effort(),
+            multi_agent_mode: super::multi_agents::configured_multi_agent_mode(
+                &self.original_config_do_not_use,
+                self.step_settings
+                    .collaboration_mode
+                    .reasoning_effort()
+                    .as_ref(),
+            ),
+            multi_agent_max_concurrent_threads: self
+                .original_config_do_not_use
+                .multi_agent_v2
+                .max_concurrent_threads_per_session,
             reasoning_summary: self.step_settings.reasoning_summary,
             personality: self.step_settings.personality,
             collaboration_mode: self.step_settings.collaboration_mode.clone(),
@@ -314,6 +326,18 @@ impl SessionConfiguration {
             cwd: self.legacy_fallback_cwd.clone(),
             runtime_workspace_roots: Some(self.runtime_workspace_roots.clone()),
             reasoning_effort: self.step_settings.collaboration_mode.reasoning_effort(),
+            multi_agent_mode: super::multi_agents::configured_multi_agent_mode(
+                &self.original_config_do_not_use,
+                self.step_settings
+                    .collaboration_mode
+                    .reasoning_effort()
+                    .as_ref(),
+            ),
+            multi_agent_max_concurrent_threads: Some(
+                self.original_config_do_not_use
+                    .multi_agent_v2
+                    .max_concurrent_threads_per_session,
+            ),
             reasoning_summary: self.step_settings.reasoning_summary,
             personality: self.step_settings.personality,
             collaboration_mode: self.step_settings.collaboration_mode.clone(),
@@ -345,6 +369,18 @@ impl SessionConfiguration {
             summary: self.step_settings.reasoning_summary,
             service_tier: Some(self.step_settings.service_tier.clone()),
             collaboration_mode: Some(self.step_settings.collaboration_mode.clone()),
+            multi_agent_mode: Some(super::multi_agents::configured_multi_agent_mode(
+                &self.original_config_do_not_use,
+                self.step_settings
+                    .collaboration_mode
+                    .reasoning_effort()
+                    .as_ref(),
+            )),
+            multi_agent_max_concurrent_threads: Some(
+                self.original_config_do_not_use
+                    .multi_agent_v2
+                    .max_concurrent_threads_per_session,
+            ),
             personality: self.step_settings.personality,
             disabled_plugin_ids: Some(self.disabled_plugin_ids.clone()),
             ..Default::default()
@@ -405,6 +441,24 @@ impl SessionConfiguration {
                             }
                         )
                 });
+        if let Some(multi_agent_mode) = updates.multi_agent_mode.clone() {
+            let mut config = (*next_configuration.original_config_do_not_use).clone();
+            config.multi_agent_v2.mode = Some(multi_agent_mode);
+            next_configuration.original_config_do_not_use = Arc::new(config);
+        }
+        if let Some(max_threads) = updates.multi_agent_max_concurrent_threads {
+            if max_threads == 0 {
+                return Err(ConstraintError::InvalidValue {
+                    field_name: "multi_agent_max_concurrent_threads",
+                    candidate: max_threads.to_string(),
+                    allowed: "an integer greater than or equal to 1".to_string(),
+                    requirement_source: codex_config::RequirementSource::Unknown,
+                });
+            }
+            let mut config = (*next_configuration.original_config_do_not_use).clone();
+            config.multi_agent_v2.max_concurrent_threads_per_session = max_threads;
+            next_configuration.original_config_do_not_use = Arc::new(config);
+        }
         if let Some(windows_sandbox_level) = updates.windows_sandbox_level {
             next_configuration.windows_sandbox_level = windows_sandbox_level;
         }
@@ -590,6 +644,8 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) permission_profile: Option<PermissionProfile>,
     pub(crate) active_permission_profile: Option<ActivePermissionProfile>,
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
+    pub(crate) multi_agent_mode: Option<MultiAgentMode>,
+    pub(crate) multi_agent_max_concurrent_threads: Option<usize>,
     pub(crate) service_tier_for_turn: Option<String>,
     pub(crate) app_server_client_name: Option<String>,
     pub(crate) app_server_client_version: Option<String>,

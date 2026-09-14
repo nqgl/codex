@@ -1,0 +1,17 @@
+---
+source: tui/src/chatwidget/tests/popups_and_settings.rs
+expression: popup
+---
+  Agent Concurrency
+  Applies to this session only; config.toml is unchanged.
+
+  1. 1            Primary agent only; delegation cannot run concurrently.
+  2. 2            Primary agent plus up to 1 concurrent sub-agent.
+  3. 3            Primary agent plus up to 2 concurrent sub-agents.
+› 4. 4 (current)  Primary agent plus up to 3 concurrent sub-agents.
+  5. 6            Primary agent plus up to 5 concurrent sub-agents.
+  6. 8            Primary agent plus up to 7 concurrent sub-agents.
+  7. 12           Primary agent plus up to 11 concurrent sub-agents.
+  8. 16           Primary agent plus up to 15 concurrent sub-agents.
+
+  Press enter to confirm or esc to go back

@@ -157,6 +157,25 @@ pub(super) fn enable_keyboard_enhancement() {
     }
 }
 
+pub(super) fn key_release_reporting_enabled() -> bool {
+    if keyboard_enhancement_disabled() {
+        return false;
+    }
+
+    let running_in_tmux_session = running_in_tmux_session();
+    let tmux_extended_keys_format = if running_in_tmux_session {
+        read_tmux_extended_keys_format()
+    } else {
+        None
+    };
+    keyboard_enhancement_flags(
+        terminal_info().name,
+        running_in_tmux_session,
+        tmux_extended_keys_format.as_deref(),
+    )
+    .contains(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+}
+
 fn keyboard_enhancement_flags(
     terminal_name: TerminalName,
     running_in_tmux_session: bool,

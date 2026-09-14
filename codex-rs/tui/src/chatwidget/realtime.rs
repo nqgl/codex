@@ -253,6 +253,13 @@ impl ChatWidget {
     }
 
     pub(crate) fn toggle_realtime_conversation(&mut self) {
+        if self.dictation.phase != super::dictation::DictationPhase::Idle {
+            self.add_info_message(
+                "Finish push-to-talk dictation before starting voice mode.".to_string(),
+                /*hint*/ None,
+            );
+            return;
+        }
         if self.realtime_conversation.phase == RealtimeConversationPhase::Stopping {
             self.realtime_conversation.startup_retry = StartupRetry::Used;
             self.add_info_message(

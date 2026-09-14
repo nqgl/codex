@@ -43,7 +43,7 @@ async fn next_rate_limits_loaded(
 }
 
 #[tokio::test]
-async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> Result<()> {
+async fn usage_refresh_declines_reserve_and_preserves_polling() -> Result<()> {
     let backend = MockServer::start().await;
     let home = tempdir()?;
     write_chatgpt_auth(
@@ -67,6 +67,7 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
     app.config.chatgpt_base_url = backend.uri();
     app.config.sqlite = codex_state::SqliteConfig::new_for_testing(home.path().abs());
     set_chatgpt_auth(&mut app.chat_widget);
+    let original_model = app.chat_widget.current_model().to_owned();
     let mut session = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     for (used, seconds) in [(10, 60), (75, 30), (90, 15), (99, 5), (20, 60)] {
@@ -75,6 +76,11 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
             .and(path("/api/codex/usage"))
             .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_json(json!({
                 "account_id": "workspace-a", "user_id": "user-a", "plan_type": "plus",
+                "rate_limit_upsell": {
+                    "banner_type": "luna_reserve", "presentation": "dismissible",
+                    "title": "Reserve available", "description": "Use Reserve",
+                    "fallback_model_slugs": ["gpt-reserve"]
+                },
                 "rate_limit": {"allowed": true, "limit_reached": false,
                     "primary_window": {"used_percent": used, "limit_window_seconds": 18000,
                         "reset_after_seconds": 1800, "reset_at": 2000000000}},
@@ -99,8 +105,17 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
         );
         let loaded = next_rate_limits_loaded(&mut events).await?;
         assert_matches!(&loaded, AppEvent::RateLimitsLoaded { result: Ok(_), .. });
+        if let AppEvent::RateLimitsLoaded {
+            result: Ok(response),
+            ..
+        } = &loaded
+        {
+            assert!(response.rate_limit_upsell.is_none());
+        }
         let before = std::time::Instant::now();
         app.handle_event(&mut tui, &mut session, loaded).await?;
+        assert_eq!(app.chat_widget.current_model(), original_model);
+        assert!(app.chat_widget.backend_banner_fallback().is_none());
         let after = std::time::Instant::now();
         let interval = app.chat_widget.rate_limit_refresh_interval().unwrap();
         assert_eq!(interval, Duration::from_secs(seconds));
@@ -114,7 +129,7 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
             .iter()
             .find(|request| request.url.path() == "/api/codex/usage")
             .unwrap();
-        assert!(usage.headers.contains_key("x-openai-codex-luna-reserve"));
+        assert!(!usage.headers.contains_key("x-openai-codex-luna-reserve"));
         backend.verify().await;
     }
     session.shutdown().await?;

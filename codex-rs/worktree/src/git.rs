@@ -94,6 +94,84 @@ pub(crate) fn git_path_from_bytes(bytes: &[u8]) -> Result<PathBuf> {
     }
 }
 
+/// List worktrees in NUL-delimited form, with a quoted-path fallback for older Git.
+pub(crate) fn worktree_porcelain(cwd: &Path) -> Result<Vec<u8>> {
+    let output = base_git_command(cwd)
+        .args(["worktree", "list", "--porcelain", "-z"])
+        .output()
+        .context("failed to list Git worktrees")?;
+    if output.status.success() {
+        return Ok(output.stdout);
+    }
+    if output.status.code() != Some(129) {
+        ensure_git_success(&output)?;
+    }
+    // Git 2.34 rejects -z with a usage error. This read-only retry retains the same isolation
+    // from hooks/configuration and the caller's registration/backlink checks.
+    let legacy = base_git_command(cwd)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .context("failed to list Git worktrees without -z")?;
+    ensure_git_success(&legacy)?;
+    normalize_worktree_porcelain(&legacy.stdout)
+}
+
+fn normalize_worktree_porcelain(data: &[u8]) -> Result<Vec<u8>> {
+    let mut output = Vec::with_capacity(data.len());
+    for line in data
+        .strip_suffix(b"\n")
+        .unwrap_or(data)
+        .split(|byte| *byte == b'\n')
+    {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if let Some(quoted) = line.strip_prefix(b"worktree \"") {
+            let quoted = quoted
+                .strip_suffix(b"\"")
+                .context("unterminated quoted Git worktree path")?;
+            output.extend_from_slice(b"worktree ");
+            let mut bytes = quoted.iter().copied().peekable();
+            while let Some(byte) = bytes.next() {
+                if byte != b'\\' {
+                    output.push(byte);
+                    continue;
+                }
+                let escaped = bytes.next().context("incomplete Git path escape")?;
+                let decoded = match escaped {
+                    b'a' => 7,
+                    b'b' => 8,
+                    b't' => 9,
+                    b'n' => 10,
+                    b'v' => 11,
+                    b'f' => 12,
+                    b'r' => 13,
+                    b'\\' | b'"' => escaped,
+                    b'0'..=b'7' => {
+                        let mut value = u16::from(escaped - b'0');
+                        for _ in 0..2 {
+                            if let Some(next @ b'0'..=b'7') = bytes.peek().copied() {
+                                bytes.next();
+                                value = value * 8 + u16::from(next - b'0');
+                            } else {
+                                break;
+                            }
+                        }
+                        u8::try_from(value).context("invalid octal Git path escape")?
+                    }
+                    _ => bail!("unknown Git path escape"),
+                };
+                if decoded == 0 {
+                    bail!("Git worktree path contains a NUL byte");
+                }
+                output.push(decoded);
+            }
+        } else {
+            output.extend_from_slice(line);
+        }
+        output.push(b'\0');
+    }
+    Ok(output)
+}
+
 /// Resolves the cached repository default without fetching or inheriting Git selectors.
 /// Prefer a remote HEAD (origin first), then conventional main/master refs.
 pub fn default_worktree_base(cwd: &Path) -> Result<String> {

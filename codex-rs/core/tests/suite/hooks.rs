@@ -1936,12 +1936,10 @@ async fn async_hook_finishing_while_idle_waits_for_the_next_turn(
         .await
         .context("timed out waiting for the async hook to start")?;
 
-    fs::write(
-        test.codex_home_path()
-            .join("async_user_prompt_submit_release"),
-        "ready",
-    )
-    .context("release gated async hook")?;
+    let release_path = test
+        .codex_home_path()
+        .join("async_user_prompt_submit_release");
+    fs::write(&release_path, "ready").context("release gated async hook")?;
 
     let finished_path = test
         .codex_home_path()
@@ -1964,6 +1962,9 @@ async fn async_hook_finishing_while_idle_waits_for_the_next_turn(
     );
 
     let next_prompt = "observe the buffered async context";
+    if !automatic_continuation {
+        fs::remove_file(&release_path).context("gate the next user prompt hook")?;
+    }
     let next_turn = if automatic_continuation {
         TurnInputRequest::new(TurnInput::ResponseItem(responses::user_message_item(
             next_prompt,
@@ -2000,6 +2001,9 @@ async fn async_hook_finishing_while_idle_waits_for_the_next_turn(
     })
     .await
     .context("timed out waiting for the next turn to complete")??;
+    if !automatic_continuation {
+        fs::write(&release_path, "ready").context("release the next user prompt hook")?;
+    }
 
     let requests = responses.requests();
     assert_eq!(requests.len(), 2);

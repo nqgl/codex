@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/dictation.rs
+expression: lines
+---
+• Finish push-to-talk dictation before starting voice mode.

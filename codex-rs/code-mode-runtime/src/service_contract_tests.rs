@@ -1,5 +1,6 @@
 use codex_code_mode_protocol::NoopCodeModeSessionDelegate;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -13,6 +14,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
+use crate::BUNDLE_TOOL_NAME;
 use crate::CodeModeToolKind;
 use crate::ToolDefinition;
 
@@ -35,6 +37,59 @@ struct BlockingDelegate {
 struct HeldNotificationDelegate {
     events_tx: mpsc::UnboundedSender<DelegateEvent>,
     notification_release: Notify,
+}
+
+#[derive(Default)]
+struct BundleApiDelegate {
+    calls: Mutex<Vec<serde_json::Value>>,
+}
+
+impl CodeModeSessionDelegate for BundleApiDelegate {
+    fn invoke_tool<'a>(
+        &'a self,
+        invocation: CodeModeNestedToolCall,
+        _cancellation_token: CancellationToken,
+    ) -> ToolInvocationFuture<'a> {
+        Box::pin(async move {
+            if invocation.tool_name.name != BUNDLE_TOOL_NAME {
+                return Err(format!("unexpected nested tool `{}`", invocation.tool_name));
+            }
+            let input = invocation
+                .input
+                .ok_or_else(|| "bundle call should have input".to_string())?;
+            self.calls.lock().unwrap().push(input.clone());
+            match input.get("op").and_then(serde_json::Value::as_str) {
+                Some("create") => Ok(serde_json::json!({
+                    "__codex_bundle_ref": {
+                        "id": "bundle-test",
+                        "selected": [],
+                        "view": "full",
+                    }
+                })),
+                Some("info") => Ok(serde_json::json!({"kind": "bundle-info"})),
+                Some("summarize") => Ok(serde_json::json!({
+                    "__codex_bundle_ref": {
+                        "id": "bundle-result",
+                        "selected": [],
+                        "view": "full",
+                    }
+                })),
+                operation => Err(format!("unexpected bundle operation {operation:?}")),
+            }
+        })
+    }
+
+    fn notify<'a>(
+        &'a self,
+        _call_id: String,
+        _cell_id: CellId,
+        _text: String,
+        _cancellation_token: CancellationToken,
+    ) -> NotificationFuture<'a> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn cell_closed(&self, _cell_id: &CellId) {}
 }
 
 impl HeldNotificationDelegate {
@@ -296,6 +351,82 @@ async fn yields_and_resumes() {
             }],
             error_text: None,
         })
+    );
+}
+
+#[tokio::test]
+async fn bundle_values_round_trip_through_store_and_load_transparently() {
+    let delegate = Arc::new(BundleApiDelegate::default());
+    let service = InProcessCodeModeSession::new();
+
+    let response = service
+        .execute(
+            ExecuteRequest {
+                source: r#"
+const bundle = (await bundles.create({document: "evidence"}))
+  .select("document")
+  .omitted();
+store("bundle", bundle);
+const restored = load("bundle");
+const info = await restored.info();
+const perItem = await restored.each().summarize("preserve caveats");
+store("per-item", perItem);
+text(JSON.stringify({
+  id: restored.id,
+  info,
+  resultId: load("per-item").id,
+}));
+"#
+                .to_string(),
+                yield_time_ms: Some(60_000),
+                ..execute_request("")
+            },
+            delegate.clone(),
+        )
+        .await
+        .unwrap()
+        .initial_response()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response,
+        RuntimeResponse::Result {
+            cell_id: cell_id("1"),
+            content_items: vec![FunctionCallOutputContentItem::InputText {
+                text: r#"{"id":"bundle-test","info":{"kind":"bundle-info"},"resultId":"bundle-result"}"#
+                    .to_string(),
+            }],
+            error_text: None,
+            code_mode_host_duration: None,
+        }
+    );
+    assert_eq!(
+        *delegate.calls.lock().unwrap(),
+        vec![
+            serde_json::json!({
+                "op": "create",
+                "value": {"document": "evidence"},
+            }),
+            serde_json::json!({
+                "op": "info",
+                "bundle": {
+                    "id": "bundle-test",
+                    "selected": ["document"],
+                    "view": "omitted",
+                },
+            }),
+            serde_json::json!({
+                "op": "summarize",
+                "bundle": {
+                    "id": "bundle-test",
+                    "selected": ["document"],
+                    "view": "omitted",
+                },
+                "instructions": "preserve caveats",
+                "each": true,
+            }),
+        ]
     );
 }
 

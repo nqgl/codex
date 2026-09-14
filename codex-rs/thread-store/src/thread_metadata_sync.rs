@@ -668,6 +668,8 @@ mod tests {
                     cwd: cwd.clone().try_into().expect("absolute settings cwd"),
                     runtime_workspace_roots: None,
                     reasoning_effort: Some(ReasoningEffort::Ultra),
+                    multi_agent_mode: Default::default(),
+                    multi_agent_max_concurrent_threads: None,
                     reasoning_summary: Some(ReasoningSummary::Auto),
                     personality: None,
                     collaboration_mode: CollaborationMode {

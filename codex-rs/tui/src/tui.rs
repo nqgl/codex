@@ -64,6 +64,7 @@ use codex_config::types::NotificationMethod;
 mod event_stream;
 mod frame_rate_limiter;
 mod frame_requester;
+mod history_replay_sync;
 mod history_tail;
 mod input_boundary;
 #[cfg(unix)]
@@ -100,6 +101,10 @@ pub(crate) fn running_in_vscode_terminal() -> bool {
     keyboard_modes::running_in_vscode_terminal()
 }
 
+pub(crate) fn key_release_reporting_enabled() -> bool {
+    keyboard_modes::key_release_reporting_enabled()
+}
+
 fn should_emit_notification(condition: NotificationCondition, terminal_focused: bool) -> bool {
     match condition {
         NotificationCondition::Unfocused => !terminal_focused,
@@ -109,6 +114,7 @@ fn should_emit_notification(condition: NotificationCondition, terminal_focused: 
 
 impl Drop for Tui {
     fn drop(&mut self) {
+        let _ = self.history_replay_sync.finish(self.terminal.backend_mut());
         if let Err(err) = self.clear_ambient_pet_image() {
             tracing::debug!(error = %err, "failed to clear ambient pet image on TUI drop");
         }
@@ -592,6 +598,7 @@ pub struct Tui {
     event_broker: Arc<EventBroker>,
     pub(crate) terminal: Terminal,
     pending_history_lines: Vec<PendingHistoryLines>,
+    history_replay_sync: history_replay_sync::HistoryReplaySync,
     screen_size: ScreenSizePolicy,
     ambient_pet_image_state: crate::pets::PetImageRenderState,
     pet_picker_preview_image_state: crate::pets::PetImageRenderState,
@@ -656,6 +663,7 @@ impl Tui {
             event_broker: Arc::new(event_broker),
             terminal,
             pending_history_lines: vec![],
+            history_replay_sync: Default::default(),
             screen_size: ScreenSizePolicy::default(),
             ambient_pet_image_state: crate::pets::PetImageRenderState::default(),
             pet_picker_preview_image_state: crate::pets::PetImageRenderState::default(),
@@ -846,6 +854,7 @@ impl Tui {
             return Ok(());
         }
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
+        crate::math_render::invalidate_images();
         self.terminal.invalidate_cursor_state();
         // Enable "alternate scroll" so terminals may translate wheel to arrows
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
@@ -872,6 +881,7 @@ impl Tui {
         // Disable alternate scroll when leaving alt-screen
         let _ = execute!(self.terminal.backend_mut(), DisableAlternateScroll);
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        crate::math_render::invalidate_images();
         self.terminal.invalidate_cursor_state();
         if let Some(saved) = self.alt_saved_viewport.take() {
             self.terminal.set_viewport_area(saved);
@@ -918,6 +928,10 @@ impl Tui {
 
     pub fn clear_pending_history_lines(&mut self) {
         self.pending_history_lines.clear();
+    }
+
+    pub(crate) fn begin_history_replay(&mut self) -> io::Result<()> {
+        self.history_replay_sync.begin(self.terminal.backend_mut())
     }
 
     /// Resize the inline viewport for the resize-reflow path.
@@ -1006,7 +1020,7 @@ impl Tui {
 
         ensure_virtual_terminal_processing()?;
 
-        stdout().sync_update(|_| {
+        let result = stdout().sync_update(|_| {
             #[cfg(unix)]
             if let Some(prepared) = prepared_resume.take() {
                 self.terminal.invalidate_cursor_state();
@@ -1063,7 +1077,10 @@ impl Tui {
             terminal.draw_with_size(screen_size, |frame| {
                 draw_fn(frame);
             })
-        })?
+        })?;
+        self.history_replay_sync
+            .finish(self.terminal.backend_mut())?;
+        result
     }
 
     pub fn draw_ambient_pet_image(
@@ -1142,7 +1159,7 @@ impl Tui {
 
         ensure_virtual_terminal_processing()?;
 
-        stdout().sync_update(|_| {
+        let result = stdout().sync_update(|_| {
             #[cfg(unix)]
             if let Some(prepared) = prepared_resume.take() {
                 self.terminal.invalidate_cursor_state();
@@ -1188,7 +1205,10 @@ impl Tui {
             terminal.draw_with_size(screen_size, |frame| {
                 draw_fn(frame);
             })
-        })?
+        })?;
+        self.history_replay_sync
+            .finish(self.terminal.backend_mut())?;
+        result
     }
 
     fn pending_viewport_area(&mut self, screen_size: Size) -> Result<Option<Rect>> {

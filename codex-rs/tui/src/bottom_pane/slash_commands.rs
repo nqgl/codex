@@ -325,10 +325,12 @@ mod tests {
             commands,
             vec![
                 SlashCommand::Ide,
+                SlashCommand::AgentMessages,
                 SlashCommand::Agents,
                 SlashCommand::Copy,
                 SlashCommand::Export,
                 SlashCommand::Raw,
+                SlashCommand::Math,
                 SlashCommand::Diff,
                 SlashCommand::Mention,
                 SlashCommand::Status,

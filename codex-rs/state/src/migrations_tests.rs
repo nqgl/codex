@@ -6,9 +6,12 @@ use sqlx::migrate::Migration;
 use sqlx::migrate::Migrator;
 use std::borrow::Cow;
 
+use super::MONITOR_MIGRATOR;
 use super::STATE_MIGRATOR;
 use super::THREAD_HISTORY_MIGRATOR;
+use super::repair_divergent_migration_versions;
 use super::repair_legacy_recency_migration_version;
+use super::runtime_monitor_migrator;
 use crate::PINNED_THREAD_SECTION_ID;
 use crate::PINNED_THREAD_SECTION_NAME;
 
@@ -846,6 +849,340 @@ async fn repairs_recency_migration_that_was_applied_as_version_38() {
         .collect::<Vec<_>>();
     assert_eq!(applied, expected);
 
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn repairs_monitor_migrations_that_used_legacy_versions() {
+    let sqlite_home = crate::runtime::test_support::unique_temp_dir();
+    tokio::fs::create_dir_all(&sqlite_home)
+        .await
+        .expect("sqlite home should be created");
+    let _cleanup = scopeguard::guard(sqlite_home.clone(), |sqlite_home| {
+        let _ = std::fs::remove_dir_all(sqlite_home);
+    });
+    let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
+    let state_path = sqlite.state_db_path();
+    let pool = sqlite
+        .open_read_write_pool(&state_path)
+        .await
+        .expect("sqlite database should open");
+    migrator_through(/*version*/ 47)
+        .run(&pool)
+        .await
+        .expect("pre-monitor migrations should apply");
+
+    let monitor_migrations = [54_i64, 55_i64].map(|version| {
+        MONITOR_MIGRATOR
+            .migrations
+            .iter()
+            .find(|migration| migration.version == version)
+            .expect("current monitor migration should exist")
+    });
+    let mut legacy_monitor_migrations = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version <= 47)
+        .cloned()
+        .collect::<Vec<_>>();
+    legacy_monitor_migrations.extend(monitor_migrations.into_iter().enumerate().map(
+        |(index, migration)| {
+            Migration::new(
+                48 + index as i64,
+                migration.description.clone(),
+                migration.migration_type,
+                migration.sql.clone(),
+                migration.no_tx,
+            )
+        },
+    ));
+    Migrator::with_migrations(legacy_monitor_migrations)
+        .run(&pool)
+        .await
+        .expect("legacy monitor migrations should apply");
+
+    repair_divergent_migration_versions(&pool, &STATE_MIGRATOR)
+        .await
+        .expect("legacy monitor migration history should be repaired");
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("current migrations should apply after repair");
+    runtime_monitor_migrator()
+        .run(&pool)
+        .await
+        .expect("monitor ledger should apply");
+
+    let applied = sqlx::query(
+        "SELECT version, checksum FROM _sqlx_migrations WHERE version >= 48 ORDER BY version",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("applied migrations should load")
+    .into_iter()
+    .map(|row| {
+        (
+            row.get::<i64, _>("version"),
+            row.get::<Vec<u8>, _>("checksum"),
+        )
+    })
+    .collect::<Vec<_>>();
+    let expected = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version >= 48)
+        .map(|migration| (migration.version, migration.checksum.to_vec()))
+        .collect::<Vec<_>>();
+    assert_eq!(applied, expected);
+
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn repairs_shifted_harness_layout_to_standard_compatible_versions() {
+    let sqlite_home = crate::runtime::test_support::unique_temp_dir();
+    tokio::fs::create_dir_all(&sqlite_home)
+        .await
+        .expect("sqlite home should be created");
+    let _cleanup = scopeguard::guard(sqlite_home.clone(), |sqlite_home| {
+        let _ = std::fs::remove_dir_all(sqlite_home);
+    });
+    let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
+    let state_path = sqlite.state_db_path();
+    let pool = sqlite
+        .open_read_write_pool(&state_path)
+        .await
+        .expect("sqlite database should open");
+    migrator_through(/*version*/ 50)
+        .run(&pool)
+        .await
+        .expect("shared migrations should apply");
+
+    let mut historical_harness_migrations = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version <= 50)
+        .cloned()
+        .collect::<Vec<_>>();
+    historical_harness_migrations.extend(
+        [
+            (51_i64, 54_i64),
+            (52_i64, 55_i64),
+            (53_i64, 51_i64),
+            (54_i64, 52_i64),
+            (55_i64, 53_i64),
+        ]
+        .map(|(historical_version, current_version)| {
+            let source = if historical_version <= 52 {
+                &MONITOR_MIGRATOR
+            } else {
+                &STATE_MIGRATOR
+            };
+            let migration = source
+                .migrations
+                .iter()
+                .find(|migration| migration.version == current_version)
+                .expect("historical harness migration should exist");
+            Migration::new(
+                historical_version,
+                migration.description.clone(),
+                migration.migration_type,
+                migration.sql.clone(),
+                migration.no_tx,
+            )
+        }),
+    );
+    Migrator::with_migrations(historical_harness_migrations)
+        .run(&pool)
+        .await
+        .expect("historical harness migrations should apply");
+
+    repair_divergent_migration_versions(&pool, &STATE_MIGRATOR)
+        .await
+        .expect("historical harness migration history should be repaired");
+
+    let mut standard_migrator = migrator_through(/*version*/ 54);
+    standard_migrator.ignore_missing = true;
+    standard_migrator
+        .run(&pool)
+        .await
+        .expect("standard Codex should accept the repaired migration history");
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("harness migrations should apply after repair");
+    runtime_monitor_migrator()
+        .run(&pool)
+        .await
+        .expect("monitor ledger should apply");
+
+    let applied = sqlx::query(
+        "SELECT version, checksum FROM _sqlx_migrations WHERE version >= 51 ORDER BY version",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("applied migrations should load")
+    .into_iter()
+    .map(|row| {
+        (
+            row.get::<i64, _>("version"),
+            row.get::<Vec<u8>, _>("checksum"),
+        )
+    })
+    .collect::<Vec<_>>();
+    let expected = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version >= 51)
+        .map(|migration| (migration.version, migration.checksum.to_vec()))
+        .collect::<Vec<_>>();
+    assert_eq!(applied, expected);
+
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn released_monitor_layout_moves_to_its_own_ledger_without_losing_data() {
+    let home = crate::runtime::test_support::unique_temp_dir();
+    tokio::fs::create_dir_all(&home).await.unwrap();
+    let _cleanup = scopeguard::guard(home.clone(), |home| {
+        let _ = std::fs::remove_dir_all(home);
+    });
+    let sqlite = crate::SqliteConfig::new_for_testing(home.as_path().abs());
+    let pool = sqlite
+        .open_read_write_pool(&sqlite.state_db_path())
+        .await
+        .unwrap();
+    let historical = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|m| m.version <= 53)
+        .cloned()
+        .chain(MONITOR_MIGRATOR.migrations.iter().cloned())
+        .collect::<Vec<_>>();
+    Migrator::with_migrations(historical)
+        .run(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode)
+                 VALUES ('owner', 'rollout.jsonl', 0, 0, 'cli', 'openai', '/tmp', 'owner', 'read-only', 'never')")
+        .execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO thread_monitors (thread_id, name, command, cwd, trusted, running)
+                 VALUES ('owner', 'watch', 'printf ok', '/tmp', 1, 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    for _ in 0..2 {
+        repair_divergent_migration_versions(&pool, &STATE_MIGRATOR)
+            .await
+            .unwrap();
+        STATE_MIGRATOR.run(&pool).await.unwrap();
+        runtime_monitor_migrator().run(&pool).await.unwrap();
+    }
+    let monitors = sqlx::query_as::<_, (String, String, bool, bool)>(
+        "SELECT name, command, trusted, running FROM thread_monitors",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        monitors,
+        vec![("watch".into(), "printf ok".into(), true, false)]
+    );
+    let standard = sqlx::query_as::<_, (i64, Vec<u8>)>(
+        "SELECT version, checksum FROM _sqlx_migrations ORDER BY version",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        standard,
+        STATE_MIGRATOR
+            .migrations
+            .iter()
+            .map(|m| (m.version, m.checksum.to_vec()))
+            .collect::<Vec<_>>()
+    );
+    let custom = sqlx::query_as::<_, (i64, Vec<u8>)>(
+        "SELECT version, checksum FROM _codex_monitor_migrations ORDER BY version",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        custom,
+        MONITOR_MIGRATOR
+            .migrations
+            .iter()
+            .map(|m| (m.version, m.checksum.to_vec()))
+            .collect::<Vec<_>>()
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn unknown_monitor_checksum_is_not_reclassified_as_a_custom_migration() {
+    let home = crate::runtime::test_support::unique_temp_dir();
+    tokio::fs::create_dir_all(&home).await.unwrap();
+    let _cleanup = scopeguard::guard(home.clone(), |home| {
+        let _ = std::fs::remove_dir_all(home);
+    });
+    let sqlite = crate::SqliteConfig::new_for_testing(home.as_path().abs());
+    let pool = sqlite
+        .open_read_write_pool(&sqlite.state_db_path())
+        .await
+        .unwrap();
+    migrator_through(/*version*/ 53).run(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+                 VALUES (54, 'unknown', 1, X'0102', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    repair_divergent_migration_versions(&pool, &STATE_MIGRATOR)
+        .await
+        .unwrap();
+    let record = sqlx::query_as::<_, (i64, Vec<u8>)>(
+        "SELECT version, checksum FROM _sqlx_migrations WHERE version = 54",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(record, (54, vec![1, 2]));
+    assert!(STATE_MIGRATOR.run(&pool).await.is_err());
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn monitor_ledger_repair_waits_for_a_concurrent_writer() {
+    let home = crate::runtime::test_support::unique_temp_dir();
+    tokio::fs::create_dir_all(&home).await.unwrap();
+    let _cleanup = scopeguard::guard(home.clone(), |home| {
+        let _ = std::fs::remove_dir_all(home);
+    });
+    let sqlite = crate::SqliteConfig::new_for_testing(home.as_path().abs());
+    let pool = sqlite
+        .open_read_write_pool(&sqlite.state_db_path())
+        .await
+        .unwrap();
+    STATE_MIGRATOR.run(&pool).await.unwrap();
+    repair_divergent_migration_versions(&pool, &STATE_MIGRATOR)
+        .await
+        .unwrap();
+    let writer = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+    let release = async {
+        tokio::time::sleep(std::time::Duration::from_millis(/*millis*/ 50)).await;
+        writer.rollback().await.unwrap();
+    };
+    let (repair, ()) = tokio::join!(
+        repair_divergent_migration_versions(&pool, &STATE_MIGRATOR),
+        release
+    );
+    repair.expect("repair should wait for the writer instead of failing a transaction upgrade");
     pool.close().await;
 }
 

@@ -1,6 +1,6 @@
 use super::analytics::ToolCallAnalytics;
 use super::message_tool::FollowupTaskArgs;
-use super::message_tool::MessageDeliveryMode;
+use super::message_tool::MessageToolKind;
 use super::message_tool::handle_message_string_tool;
 use super::*;
 use crate::tools::handlers::multi_agents_spec::create_followup_task_tool;
@@ -40,7 +40,7 @@ impl Handler {
         let args: FollowupTaskArgs = parse_arguments(&arguments)?;
         handle_message_string_tool(
             invocation,
-            MessageDeliveryMode::TriggerTurn,
+            MessageToolKind::Followup,
             args.target,
             args.message,
             analytics,

@@ -224,3 +224,31 @@ Existing rollouts may contain historical `ThreadRolledBack` events. Their replay
 and migration remain supported so resuming, reading, and forking those threads
 preserves the surviving history. This disk compatibility does not require restoring
 support for new `thread/rollback` requests.
+
+# Custom harness app-server extensions
+
+The following section records this branch's local API differences. The protocol
+types and generated schemas in `../app-server-protocol/` define the complete interface.
+
+## Delegation policy and concurrency
+
+This harness keeps delegation policy independent of reasoning effort. The custom
+`balanced` policy joins `explicitRequestOnly` and `proactive`; it permits a useful
+independent delegate without requiring delegation for every task.
+
+- `turn/start.multiAgentMode` overrides delegation policy for the turn.
+- `thread/settings/update.multiAgentMode` changes the loaded thread's next-turn policy.
+- `thread/settings/update.multiAgentMaxConcurrentThreads` changes the shared agent-tree
+  concurrency cap. The value must be at least 1.
+- Start, resume, and fork responses, and thread-settings notifications, report the
+  effective `multiAgentMode` and `multiAgentMaxConcurrentThreads`.
+
+These fields are experimental. Settings updates do not start a turn or add a
+transcript item. Parent-owned Multi-Agent V2 children reject direct settings updates.
+
+The compatibility field `thread/start.multiAgentMode` remains ignored, as it was
+before this merge. Set `features.multi_agent_v2.mode` in configuration or use
+`thread/settings/update` after creation. The earlier README incorrectly described
+that start parameter as active.
+
+The model-facing policy rewrites are tracked in `../../PROMPT_CHANGES.md`.

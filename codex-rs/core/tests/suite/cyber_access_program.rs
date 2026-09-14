@@ -20,7 +20,10 @@ use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::time::Duration;
+use std::time::Instant;
 use tokio::sync::oneshot;
+use tokio::time::sleep;
 use wiremock::Mock;
 use wiremock::matchers::header;
 use wiremock::matchers::method;
@@ -302,10 +305,18 @@ async fn cyber_access_program_is_inherited_by_child_turns() -> Result<()> {
             .build_with_auto_env(&server)
             .await?;
         let mut created_threads = test.thread_manager.subscribe_thread_created();
+        let initial_parent_wake = if is_v2 {
+            Some(mount_child_completion_wake(&server).await)
+        } else {
+            None
+        };
         submit(&test, Some(CyberAccessProgram::DaybreakRed)).await?;
         let child_id = created_threads.recv().await?;
         let child = test.thread_manager.get_thread(child_id).await?;
         wait_for_event(&child, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+        if let Some(parent_wake) = initial_parent_wake.as_ref() {
+            wait_for_child_completion_wake(&test, parent_wake).await?;
+        }
 
         let child_programs = |requests: &responses::ResponseMock| {
             requests
@@ -378,9 +389,17 @@ async fn cyber_access_program_is_inherited_by_child_turns() -> Result<()> {
                 final_response("resp-child-next"),
             )
             .await;
+            let parent_wake = if is_v2 {
+                Some(mount_child_completion_wake(&server).await)
+            } else {
+                None
+            };
             submit(&test, program).await?;
             let child = test.thread_manager.get_thread(child_id).await?;
             wait_for_event(&child, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+            if let Some(parent_wake) = parent_wake.as_ref() {
+                wait_for_child_completion_wake(&test, parent_wake).await?;
+            }
             assert_eq!(
                 child_programs(&followup_child_request),
                 vec![expected],
@@ -388,6 +407,44 @@ async fn cyber_access_program_is_inherited_by_child_turns() -> Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+async fn mount_child_completion_wake(server: &wiremock::MockServer) -> responses::ResponseMock {
+    responses::mount_sse_once_match(
+        server,
+        |request: &wiremock::Request| {
+            !request.headers.contains_key("x-openai-subagent")
+                && serde_json::from_slice::<serde_json::Value>(&request.body)
+                    .is_ok_and(|body| body.to_string().contains("Sender: /root/worker"))
+        },
+        responses::sse(vec![
+            responses::ev_response_created("resp-parent-child-complete"),
+            responses::ev_assistant_message("msg-parent-child-complete", "Done."),
+            responses::ev_completed("resp-parent-child-complete"),
+        ]),
+    )
+    .await
+}
+
+async fn wait_for_child_completion_wake(
+    test: &TestCodex,
+    response: &responses::ResponseMock,
+) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if !response.requests().is_empty() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for the parent completion wake");
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
     Ok(())
 }
 

@@ -1,0 +1,5 @@
+---
+source: tui/src/math_render/inline_tests.rs
+expression: "lines.iter().map(|line| line.line.to_string()).collect::<Vec<_>>().join(\"\\n\")"
+---
+Only \(m/\sqrt{as+V}\), with \(V\).

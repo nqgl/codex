@@ -1,7 +1,7 @@
 //! Shared argument parsing and dispatch for the v2 agent messaging tools.
 //!
-//! `send_message` and `followup_task` share the same submission path and differ only in whether the
-//! resulting `InterAgentCommunication` should wake the target immediately.
+//! `send_message` and `followup_task` share the same submission path. Both wake an idle target;
+//! follow-up tasks additionally establish parent-turn linkage for the resulting work.
 
 use super::analytics::ToolCallAnalytics;
 use super::*;
@@ -10,18 +10,9 @@ use crate::agent_communication::AgentCommunicationKind;
 use crate::tools::context::FunctionToolOutput;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MessageDeliveryMode {
-    QueueOnly,
-    TriggerTurn,
-}
-
-impl MessageDeliveryMode {
-    fn trigger_turn(self) -> bool {
-        match self {
-            Self::QueueOnly => false,
-            Self::TriggerTurn => true,
-        }
-    }
+pub(crate) enum MessageToolKind {
+    Message,
+    Followup,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,7 +43,7 @@ pub(super) fn message_content(message: String) -> Result<String, FunctionCallErr
 /// Handles the shared MultiAgentV2 message flow for both `send_message` and `followup_task`.
 pub(super) async fn handle_message_string_tool(
     invocation: ToolInvocation,
-    mode: MessageDeliveryMode,
+    kind: MessageToolKind,
     target: String,
     message: String,
     analytics: &mut ToolCallAnalytics,
@@ -72,7 +63,7 @@ pub(super) async fn handle_message_string_tool(
         .agent_control
         .ensure_agent_known(receiver_thread_id)
         .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
-    if mode == MessageDeliveryMode::TriggerTurn
+    if kind == MessageToolKind::Followup
         && receiver_agent
             .agent_path
             .as_ref()
@@ -101,15 +92,14 @@ pub(super) async fn handle_message_string_tool(
         receiver_agent_path.clone(),
         message,
         &source,
-        mode.trigger_turn(),
+        /*trigger_turn*/ true,
     );
-    let kind = match mode {
-        MessageDeliveryMode::QueueOnly => AgentCommunicationKind::Message,
-        MessageDeliveryMode::TriggerTurn => AgentCommunicationKind::Followup,
+    let communication_kind = match kind {
+        MessageToolKind::Message => AgentCommunicationKind::Message,
+        MessageToolKind::Followup => AgentCommunicationKind::Followup,
     };
-    let context = AgentCommunicationContext::new(kind, session.thread_id);
-    let parent_turn_id =
-        matches!(mode, MessageDeliveryMode::TriggerTurn).then(|| turn.sub_id.clone());
+    let context = AgentCommunicationContext::new(communication_kind, session.thread_id);
+    let parent_turn_id = matches!(kind, MessageToolKind::Followup).then(|| turn.sub_id.clone());
     let result = session
         .services
         .agent_control

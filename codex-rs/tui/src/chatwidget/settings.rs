@@ -180,6 +180,47 @@ impl ChatWidget {
         self.refresh_model_dependent_surfaces();
     }
 
+    /// Set the session-local multi-agent delegation policy in the widget's config copy.
+    pub(crate) fn set_multi_agent_mode(&mut self, mode: MultiAgentMode) {
+        self.config.multi_agent_v2.mode = Some(mode);
+        self.refresh_status_line();
+    }
+
+    /// Set the session-local multi-agent concurrency cap in the widget's config copy.
+    pub(crate) fn set_multi_agent_max_concurrent_threads(&mut self, max_threads: usize) {
+        self.config
+            .multi_agent_v2
+            .max_concurrent_threads_per_session = max_threads;
+        self.refresh_status_line();
+    }
+
+    pub(super) fn current_model_uses_multi_agent_v2(&self) -> bool {
+        let model = self.current_model();
+        self.model_catalog
+            .try_list_models()
+            .ok()
+            .and_then(|models| {
+                models
+                    .into_iter()
+                    .find(|preset| preset.model == model)
+                    .and_then(|preset| preset.multi_agent_version)
+            })
+            .map_or_else(
+                || self.config.features.enabled(Feature::MultiAgentV2),
+                |version| version == MultiAgentVersion::V2,
+            )
+    }
+
+    pub(super) fn effective_multi_agent_mode(&self) -> MultiAgentMode {
+        self.config.multi_agent_v2.mode.clone().unwrap_or_else(|| {
+            if self.effective_reasoning_effort() == Some(ReasoningEffortConfig::Ultra) {
+                MultiAgentMode::Proactive
+            } else {
+                MultiAgentMode::ExplicitRequestOnly
+            }
+        })
+    }
+
     pub(crate) fn status_account_display(&self) -> Option<&StatusAccountDisplay> {
         self.status_account_display.as_ref()
     }
@@ -490,6 +531,8 @@ impl ChatWidget {
 
         settings.collaboration_mode.settings.model = settings.model;
         settings.collaboration_mode.settings.reasoning_effort = settings.effort;
+        self.set_multi_agent_mode(settings.multi_agent_mode);
+        self.set_multi_agent_max_concurrent_threads(settings.multi_agent_max_concurrent_threads);
         self.set_effective_collaboration_mode(settings.collaboration_mode);
         self.refresh_effective_service_tier();
         self.refresh_status_surfaces();

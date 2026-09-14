@@ -328,6 +328,7 @@ fn thread_resume_response_round_trips_initial_turns_page() {
         active_permission_profile: None,
         reasoning_effort: None,
         multi_agent_mode: Default::default(),
+        multi_agent_max_concurrent_threads: 4,
         initial_turns_page: Some(TurnsPage {
             data: Vec::new(),
             next_cursor: Some("cursor_next".to_string()),
@@ -4751,6 +4752,14 @@ fn thread_lifecycle_responses_default_missing_optional_fields() {
     assert_eq!(resume.active_permission_profile, None);
     assert_eq!(resume.initial_turns_page, None);
     assert_eq!(fork.active_permission_profile, None);
+    assert_eq!(
+        (
+            start.multi_agent_max_concurrent_threads,
+            resume.multi_agent_max_concurrent_threads,
+            fork.multi_agent_max_concurrent_threads,
+        ),
+        (4, 4, 4)
+    );
     assert_eq!(
         (
             start.multi_agent_mode,
