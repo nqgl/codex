@@ -16,6 +16,7 @@ use async_channel::TrySendError;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use codex_api::ApiError;
+use codex_api::ChatgptDictationStream;
 use codex_api::Provider as ApiProvider;
 use codex_api::RealtimeAudioFrame;
 use codex_api::RealtimeContextAppendChannel;
@@ -507,6 +508,7 @@ struct ConversationState {
 }
 
 struct RealtimeStart {
+    chatgpt_dictation: Option<ChatgptDictationStream>,
     api_provider: ApiProvider,
     realtime_sideband_base_url: Option<String>,
     extra_headers: Option<HeaderMap>,
@@ -600,6 +602,7 @@ impl RealtimeConversationManager {
 
     async fn start_inner(&self, start: RealtimeStart) -> CodexResult<RealtimeStartOutput> {
         let RealtimeStart {
+            chatgpt_dictation,
             api_provider,
             realtime_sideband_base_url,
             extra_headers,
@@ -663,7 +666,20 @@ impl RealtimeConversationManager {
             enabled: flush_transcript_tail_on_session_end,
             tx: transcript_tail_tx,
         };
-        let (task, sdp) = if let Some(sdp) = sdp {
+        let dictation_stop = stop_token.clone();
+        let (task, sdp) = if let Some(stream) = chatgpt_dictation {
+            let task = tokio::spawn(async move {
+                tokio::select! {
+                    _ = dictation_stop.cancelled() => {},
+                    result = stream.run(input_channels.audio_rx, events_tx.clone()) => {
+                        if let Err(error) = result {
+                            let _ = events_tx.send(RealtimeEvent::Error(error.to_string())).await;
+                        }
+                    }
+                }
+            });
+            (task, None)
+        } else if let Some(sdp) = sdp {
             let call = model_client
                 .create_realtime_call_with_headers(
                     sdp,
@@ -1211,6 +1227,7 @@ pub(crate) async fn handle_start(
 }
 
 struct PreparedRealtimeConversationStart {
+    chatgpt_dictation: Option<ChatgptDictationStream>,
     api_provider: ApiProvider,
     realtime_sideband_base_url: Option<String>,
     extra_headers: Option<HeaderMap>,
@@ -1321,10 +1338,58 @@ async fn prepare_realtime_start(
     }
     let requested_realtime_session_id = session_config.session_id.clone();
     let event_parser = session_config.event_parser;
+    // Workspace login takes precedence over any API-key environment fallback for dictation.
+    // The account service chooses its current streaming model; this does not rewrite API models.
+    let chatgpt_dictation = if provider.is_openai()
+        && matches!(&transport, ConversationStartTransport::Websocket)
+        && session_config.session_mode == RealtimeSessionMode::Transcription
+        && let Some(auth) = auth.as_ref().filter(|auth| {
+            matches!(
+                auth.api_auth_mode(),
+                AuthMode::Chatgpt | AuthMode::ChatgptAuthTokens
+            )
+        }) {
+        Some(
+            ChatgptDictationStream::connect(
+                &config.chatgpt_base_url,
+                codex_model_provider::auth_provider_from_auth_manager(
+                    Arc::clone(&auth_manager),
+                    auth,
+                ),
+                &config.http_client_factory(),
+            )
+            .await
+            .map_err(map_api_error)?,
+        )
+    } else if provider.is_openai()
+        && matches!(&transport, ConversationStartTransport::Websocket)
+        && session_config.session_mode == RealtimeSessionMode::Transcription
+        && !auth.as_ref().is_some_and(CodexAuth::is_api_key_auth)
+    {
+        return Err(CodexErr::InvalidRequest(
+            "Dictation requires a ChatGPT workspace login or explicit API-key sign-in; ambient API keys are not used as a fallback".to_string(),
+        ));
+    } else {
+        None
+    };
     let originator = sess.originator().await;
     let mut extra_headers = match transport {
+        ConversationStartTransport::Websocket if chatgpt_dictation.is_some() => None,
         ConversationStartTransport::Websocket => {
-            let realtime_api_key = realtime_api_key(auth.as_ref(), &provider)?;
+            let realtime_api_key = if provider.is_openai()
+                && session_config.session_mode == RealtimeSessionMode::Transcription
+            {
+                auth.as_ref()
+                    .and_then(CodexAuth::api_key)
+                    .ok_or_else(|| {
+                        CodexErr::InvalidRequest(
+                            "Dictation API-key sign-in is unavailable".to_string(),
+                        )
+                    })?
+                    .to_string()
+            } else {
+                realtime_api_key(auth.as_ref(), &provider)?
+            };
             realtime_request_headers(
                 requested_realtime_session_id.as_deref(),
                 Some(realtime_api_key.as_str()),
@@ -1356,6 +1421,7 @@ async fn prepare_realtime_start(
         extra_headers.insert(X_CODEX_TURN_METADATA_HEADER, metadata);
     }
     Ok(PreparedRealtimeConversationStart {
+        chatgpt_dictation,
         api_provider,
         realtime_sideband_base_url,
         extra_headers: Some(extra_headers),
@@ -1591,6 +1657,7 @@ async fn handle_start_inner(
     prepared_start: PreparedRealtimeConversationStart,
 ) -> CodexResult<()> {
     let PreparedRealtimeConversationStart {
+        chatgpt_dictation,
         api_provider,
         realtime_sideband_base_url,
         extra_headers,
@@ -1619,6 +1686,7 @@ async fn handle_start_inner(
         end: realtime_end_instructions,
     };
     let start = RealtimeStart {
+        chatgpt_dictation,
         api_provider,
         realtime_sideband_base_url,
         extra_headers,

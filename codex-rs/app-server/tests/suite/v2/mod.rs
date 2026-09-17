@@ -1,4 +1,6 @@
 mod account;
+#[path = "account_dictation_tests.rs"]
+mod account_dictation;
 mod account_thread_usage;
 mod analytics;
 mod app_installed;

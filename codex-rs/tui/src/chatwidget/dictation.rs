@@ -14,7 +14,8 @@ use std::time::Duration;
 
 const DICTATION_KEY: KeyCode = KeyCode::F(8);
 const HOLD_TO_DICTATE_KEY: KeyCode = KeyCode::Char(' ');
-const TRANSCRIPT_TAIL_WAIT: Duration = Duration::from_secs(5);
+// The account-backed streaming service allows up to eight seconds to flush its final words.
+const TRANSCRIPT_TAIL_WAIT: Duration = Duration::from_secs(/*secs*/ 10);
 const MAX_BUFFERED_AUDIO_SAMPLES: u32 = 24_000 * 5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
