@@ -676,6 +676,28 @@ impl App {
         op: &AppCommand,
     ) -> Result<bool> {
         match op {
+            AppCommand::RecallPendingSteer {
+                thread_id: requested_thread,
+                expected_turn_id,
+                client_id,
+            } => {
+                // Never apply a queued recall to a different thread selected in the meantime.
+                if *requested_thread != thread_id {
+                    return Ok(true);
+                }
+                let result = app_server
+                    .cancel_pending_steer(codex_app_server_protocol::TurnSteerCancelParams {
+                        thread_id: thread_id.to_string(),
+                        expected_turn_id: expected_turn_id.clone(),
+                        client_user_message_id: client_id.clone(),
+                    })
+                    .await
+                    .map(|response| response.cancelled)
+                    .map_err(|error| error.to_string());
+                self.chat_widget
+                    .finish_pending_input_recall(client_id, result);
+                Ok(true)
+            }
             AppCommand::Interrupt => {
                 let mut turn_id = self
                     .active_turn_id_for_thread(thread_id)

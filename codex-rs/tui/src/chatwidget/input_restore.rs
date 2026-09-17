@@ -547,6 +547,7 @@ impl ChatWidget {
         restore_mode: ThreadInputStateRestoreMode,
     ) {
         let preserve_in_flight_turn = restore_mode.preserve_in_flight_turn;
+        self.input_queue.recalling_steer = None;
         let restored_task_running =
             preserve_in_flight_turn && input_state.as_ref().is_some_and(|state| state.task_running);
         if let Some(input_state) = input_state {
@@ -577,6 +578,7 @@ impl ChatWidget {
                 self.input_queue.pending_steers.clear();
                 for pending in pending_steers.into_iter().rev() {
                     queued_user_messages.push_front(QueuedUserMessage {
+                        recall_order: pending.recall_order,
                         source: pending.source,
                         ..QueuedUserMessage::from(pending.user_message)
                     });

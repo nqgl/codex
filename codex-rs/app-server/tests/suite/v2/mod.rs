@@ -142,6 +142,8 @@ mod turn_settings_update;
 mod turn_start;
 mod turn_start_zsh_fork;
 mod turn_steer;
+#[path = "turn_steer_cancel_tests.rs"]
+mod turn_steer_cancel;
 mod view_image;
 mod web_search;
 mod windows_sandbox_setup;

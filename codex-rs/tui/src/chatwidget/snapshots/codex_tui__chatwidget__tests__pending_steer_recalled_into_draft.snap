@@ -1,0 +1,11 @@
+---
+source: tui/src/chatwidget/tests/input_recall_tests.rs
+expression: "render_bottom_popup(&chat, 80)"
+---
+• Working (0s • esc to interrupt)
+
+
+› steer message
+  new draft
+
+  tab to queue message                                       100% context left

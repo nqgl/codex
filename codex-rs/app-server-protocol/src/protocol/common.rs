@@ -1053,6 +1053,12 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::TurnInterruptResponse,
     },
+    #[experimental("turn/steer/cancel")]
+    TurnSteerCancel => "turn/steer/cancel" {
+        params: v2::TurnSteerCancelParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::TurnSteerCancelResponse,
+    },
     #[experimental("thread/realtime/start")]
     ThreadRealtimeStart => "thread/realtime/start" {
         params: v2::ThreadRealtimeStartParams,

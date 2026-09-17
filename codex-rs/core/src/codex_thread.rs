@@ -470,6 +470,15 @@ impl CodexThread {
         }
     }
 
+    /// Cancel uniquely identified, unconsumed steer input without interrupting its turn.
+    /// Returns false when the turn changed or the input was already taken for processing.
+    pub async fn cancel_pending_user_input(&self, expected_turn_id: &str, client_id: &str) -> bool {
+        self.session
+            .input_queue
+            .cancel_user_input(&self.session.active_turn, expected_turn_id, client_id)
+            .await
+    }
+
     async fn submit_turn_input_with_mode(
         &self,
         request: TurnInputRequest,

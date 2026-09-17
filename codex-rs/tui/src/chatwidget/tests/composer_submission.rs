@@ -349,6 +349,7 @@ async fn parent_owned_thread_restores_pending_initial_prompt() {
 async fn parent_owned_thread_preserves_queued_input_before_draining() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ Some("gpt-5")).await;
     let queued_message = QueuedUserMessage {
+        recall_order: 0,
         user_message: UserMessage::from("keep this queued prompt"),
         action: QueuedInputAction::Plain,
         pending_pastes: vec![("[Image 1]".to_string(), "pasted contents".to_string())],
@@ -2058,7 +2059,7 @@ fn queued_message_edit_binding_mapping_covers_special_terminals_and_tmux() {
     );
 }
 
-/// Pressing Up to recall the most recent history entry and immediately queuing
+/// Pressing Ctrl+P to recall the most recent history entry and immediately queuing
 /// it while a task is running should always enqueue the same text, even when it
 /// is queued repeatedly.
 #[tokio::test]
@@ -2076,7 +2077,7 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
 
     for _ in 0..3 {
         // Recall the prompt from history and ensure it is what we expect.
-        chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
         assert_eq!(chat.bottom_pane.composer_text(), "repeat me");
 
         // Queue the prompt while the task is running.

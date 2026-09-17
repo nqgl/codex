@@ -126,6 +126,7 @@ impl ChatWidget {
             self.input_queue
                 .queued_user_messages
                 .push_back(QueuedUserMessage {
+                    recall_order: self.input_queue.next_recall_order(),
                     source,
                     ..QueuedUserMessage::from(user_message)
                 });
@@ -146,6 +147,7 @@ impl ChatWidget {
             self.input_queue
                 .queued_user_messages
                 .push_front(QueuedUserMessage {
+                    recall_order: self.input_queue.next_recall_order(),
                     source,
                     ..QueuedUserMessage::from(user_message)
                 });
@@ -370,6 +372,7 @@ impl ChatWidget {
         };
         let client_user_message_id = uuid::Uuid::new_v4().to_string();
         let pending_steer = (!render_in_history).then(|| PendingSteer {
+            recall_order: self.input_queue.next_recall_order(),
             client_id: client_user_message_id.clone(),
             user_message: UserMessage {
                 text: text.clone(),

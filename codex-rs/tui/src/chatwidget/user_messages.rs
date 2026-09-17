@@ -66,6 +66,7 @@ pub(super) enum UserMessageSource {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct QueuedUserMessage {
+    pub(super) recall_order: u64,
     pub(super) user_message: UserMessage,
     pub(super) action: QueuedInputAction,
     pub(super) pending_pastes: Vec<(String, String)>,
@@ -75,6 +76,7 @@ pub(super) struct QueuedUserMessage {
 impl QueuedUserMessage {
     pub(super) fn new(user_message: UserMessage, action: QueuedInputAction) -> Self {
         Self {
+            recall_order: 0,
             user_message,
             action,
             pending_pastes: Vec::new(),
@@ -182,6 +184,7 @@ impl From<&str> for UserMessage {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PendingSteer {
+    pub(super) recall_order: u64,
     /// Preserved across request retries and thread switches until this submission commits.
     pub(crate) client_id: String,
     pub(super) user_message: UserMessage,

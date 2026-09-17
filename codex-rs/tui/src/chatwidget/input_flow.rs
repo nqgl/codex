@@ -169,6 +169,7 @@ impl ChatWidget {
             self.input_queue
                 .queued_user_messages
                 .push_back(QueuedUserMessage {
+                    recall_order: self.input_queue.next_recall_order(),
                     user_message,
                     action,
                     pending_pastes,

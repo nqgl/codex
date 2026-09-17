@@ -90,6 +90,46 @@ struct PendingMailboxCommunication {
 }
 
 impl InputQueue {
+    /// Retract one uniquely identified user message only while it is still buffered.
+    /// Shares both locks with queue draining: once taken for processing, input is not recallable.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "turn validation and queue removal must be atomic"
+    )]
+    pub(crate) async fn cancel_user_input(
+        &self,
+        active_turn: &Mutex<Option<ActiveTurn>>,
+        expected_turn_id: &str,
+        client_id: &str,
+    ) -> bool {
+        if expected_turn_id.is_empty() || client_id.is_empty() {
+            return false;
+        }
+        let active = active_turn.lock().await;
+        let Some(turn) = active.as_ref().filter(|turn| {
+            turn.task
+                .as_ref()
+                .is_some_and(|task| task.turn_context.sub_id == expected_turn_id)
+        }) else {
+            return false;
+        };
+        let mut state = turn.turn_state.lock().await;
+        let mut matching = state.pending_input.items.iter().enumerate().filter_map(
+            |(index, item)| {
+                matches!(item, TurnInput::UserInput { client_id: Some(id), .. } if id == client_id)
+                    .then_some(index)
+            },
+        );
+        let Some(index) = matching.next() else {
+            return false;
+        };
+        if matching.next().is_some() {
+            return false;
+        }
+        state.pending_input.items.remove(index);
+        true
+    }
+
     pub(crate) fn new() -> Self {
         let (activity_tx, _) = watch::channel(InputQueueActivity::Mailbox);
         Self {

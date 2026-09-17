@@ -696,7 +696,10 @@ async fn slash_init_does_not_depend_on_loaded_instruction_sources() {
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert!(drain_insert_history(&mut rx).is_empty());
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/init");
+    // Ctrl+P still browses history; plain Up now retracts pending input instead.
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    assert_eq!(chat.bottom_pane.composer_text(), "/init");
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
 }
 
 #[tokio::test]

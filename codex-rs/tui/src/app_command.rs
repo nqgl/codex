@@ -100,6 +100,11 @@ impl Serialize for RealtimeSpeechText {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) enum AppCommand {
     Interrupt,
+    RecallPendingSteer {
+        thread_id: ThreadId,
+        expected_turn_id: String,
+        client_id: String,
+    },
     CleanBackgroundTerminals,
     DictationStart,
     DictationAudio(ThreadRealtimeAudioChunk),

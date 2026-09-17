@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/input_recall_tests.rs
+expression: lines
+---
+[
+    "• That message is no longer pending; it could not be recalled.",
+]

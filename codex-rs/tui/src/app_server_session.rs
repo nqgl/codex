@@ -5,6 +5,7 @@
 
 mod fs;
 mod history;
+mod input_recall;
 mod models;
 mod realtime;
 mod rollout_history;

@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/input_recall_tests.rs
+expression: lines
+---
+[
+    "■ Could not recall the pending message: method unavailable",
+]

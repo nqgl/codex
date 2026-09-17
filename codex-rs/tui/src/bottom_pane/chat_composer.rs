@@ -59,6 +59,8 @@
 //! When recalling a persistent entry, encoded task links restore atomic elements and bindings.
 //! Recall moves the cursor to the end. Question editors copy primary history on recall/search;
 //! draft capture cancels previews, and restoration resets traversal.
+//! With an empty draft, ChatWidget first offers Up to queued-message recall. Pending Enter
+//! steers are restored only after server cancellation succeeds; otherwise history is unchanged.
 //! Ctrl+R searches history in the footer and previews matches in the composer.
 //! Typing and pasting edit the active search query, including large pastes and image paths.
 //! Enter accepts the preview; Esc restores the original draft.

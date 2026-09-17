@@ -319,6 +319,24 @@ pub struct TurnSteerResponse {
     pub turn_id: String,
 }
 
+/// Cancel a uniquely identified steer only while it remains in the active turn's input queue.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnSteerCancelParams {
+    pub thread_id: String,
+    pub expected_turn_id: String,
+    pub client_user_message_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnSteerCancelResponse {
+    /// False means nothing was removed. Already-consumed input and history are never rewritten.
+    pub cancelled: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]

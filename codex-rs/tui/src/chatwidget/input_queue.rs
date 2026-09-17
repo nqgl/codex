@@ -21,6 +21,7 @@ pub(super) struct PendingInputPreview {
 
 #[derive(Debug, Default)]
 pub(super) struct InputQueueState {
+    pub(super) recalling_steer: Option<String>,
     /// User inputs queued while a turn is in progress.
     pub(super) queued_user_messages: VecDeque<QueuedUserMessage>,
     /// History records for queued user messages. Slash commands such as `/goal`
@@ -51,11 +52,26 @@ pub(super) struct InputQueueState {
 }
 
 impl InputQueueState {
+    pub(super) fn next_recall_order(&self) -> u64 {
+        self.queued_user_messages
+            .iter()
+            .map(|message| message.recall_order)
+            .chain(
+                self.pending_steers
+                    .iter()
+                    .map(|message| message.recall_order),
+            )
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1)
+    }
+
     pub(super) fn has_queued_follow_up_messages(&self) -> bool {
         !self.rejected_steers_queue.is_empty() || !self.queued_user_messages.is_empty()
     }
 
     pub(super) fn clear(&mut self) {
+        self.recalling_steer = None;
         self.recovered_queue = false;
         self.queued_user_messages.clear();
         self.queued_user_message_history_records.clear();
@@ -120,6 +136,7 @@ mod tests {
             .rejected_steers_queue
             .push_back(UserMessage::from("rejected"));
         state.pending_steers.push_back(PendingSteer {
+            recall_order: 0,
             client_id: "test-submission".to_string(),
             user_message: UserMessage::from("pending"),
             history_record: UserMessageHistoryRecord::UserMessageText,

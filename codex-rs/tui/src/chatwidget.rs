@@ -346,6 +346,7 @@ mod goal_menu;
 mod ide_context;
 use self::ide_context::IdeContextState;
 mod input_queue;
+mod input_recall;
 mod reconnect;
 use self::input_queue::InputQueueState;
 mod input_flow;
