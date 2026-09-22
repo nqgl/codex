@@ -1,0 +1,43 @@
+---
+source: tui/src/bottom_pane/chat_composer/footer_state_tests.rs
+expression: "snapshots.join(\"\\n\\n\")"
+---
+Height 4:
+
+› editable draft
+
+  MODEL STATUS
+
+Height 5:
+
+› editable draft
+
+
+  MODEL STATUS
+
+Height 6:
+
+  completed words partial words
+
+› editable draft
+
+  MODEL STATUS
+
+Height 7:
+
+  completed words partial words
+
+› editable draft
+
+
+  MODEL STATUS
+
+Height 8:
+
+  completed words partial words
+
+› editable draft
+
+
+
+  MODEL STATUS

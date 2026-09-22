@@ -25,14 +25,68 @@ use wiremock::matchers::header;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
-#[test_case(200; "streaming_work_account")]
-#[test_case(403; "denied_without_api_fallback")]
+// Exercise routing to a real HTTPS origin without public-network traffic or process-global trust.
+// The subprocess trusts this test's certificate; the proxy only forwards to its local mock.
+async fn tls_backend(
+    backend: &MockServer,
+    home: &TempDir,
+) -> Result<(String, String, tokio::task::JoinHandle<()>)> {
+    let certificate = rcgen::generate_simple_self_signed(vec!["127.0.0.1".into()])?;
+    let ca = home.path().join("dictation-test-ca.pem");
+    std::fs::write(&ca, certificate.cert.pem())?;
+    let config = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()?
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![certificate.cert.der().clone()],
+        certificate.signing_key.into(),
+    )?;
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let origin = format!("https://{}", listener.local_addr()?);
+    let upstream = backend.address().to_owned();
+    let task = tokio::spawn(async move {
+        while let Ok((socket, _)) = listener.accept().await {
+            let acceptor = acceptor.clone();
+            tokio::spawn(async move {
+                let mut socket = acceptor
+                    .accept(socket)
+                    .await
+                    .expect("trusted TLS connection");
+                let mut upstream = tokio::net::TcpStream::connect(upstream)
+                    .await
+                    .expect("mock backend");
+                let _ = tokio::io::copy_bidirectional(&mut socket, &mut upstream).await;
+            });
+        }
+    });
+    Ok((origin, ca.to_string_lossy().into_owned(), task))
+}
+
+#[test_case(200, 200; "streaming_work_account")]
+#[test_case(403, 200; "denied_without_api_fallback")]
+#[test_case(200, 503; "routing_failure_without_api_fallback")]
 #[tokio::test]
 async fn account_dictation_uses_selected_workspace_and_never_falls_back_to_personal_api_key(
     status: u16,
+    routing_status: u16,
 ) -> Result<()> {
     let home = TempDir::new()?;
     let backend = MockServer::start().await;
+    let (backend_origin, ca_path, tls_task) = tls_backend(&backend, &home).await?;
+    let _tls_guard = tokio_util::task::AbortOnDropHandle::new(tls_task);
+    Mock::given(method("GET"))
+        .and(path("/api/codex/accounts/check"))
+        .respond_with(
+            ResponseTemplate::new(routing_status).set_body_json(json!({"accounts":[{
+                "id":"work-workspace", "workspace_backend_origin":backend_origin,
+                "account_routing_override":"us"
+            }]})),
+        )
+        .mount(&backend)
+        .await;
     let forbidden_api = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/codex/config/bundle"))
@@ -74,14 +128,22 @@ async fn account_dictation_uses_selected_workspace_and_never_falls_back_to_perso
         .and(path("/codex/dictation-stream-connect-info"))
         .and(header("authorization", format!("Bearer {token}")))
         .and(header("chatgpt-account-id", "work-workspace"))
+        .and(header("x-openai-account-routing-override", "us"))
+        .and(header(
+            "host",
+            backend_origin.trim_start_matches("https://"),
+        ))
         .respond_with(response)
-        .expect(/*r*/ 1)
+        .expect(/*r*/ u64::from(routing_status == 200))
         .mount(&backend)
         .await;
     let mut app = TestAppServer::builder()
         .with_codex_home(home.path())
         .without_managed_config()
-        .with_env_overrides(&[("OPENAI_API_KEY", Some("personal-key-must-not-be-used"))])
+        .with_env_overrides(&[
+            ("OPENAI_API_KEY", Some("personal-key-must-not-be-used")),
+            ("CODEX_CA_CERTIFICATE", Some(ca_path.as_str())),
+        ])
         .build_initialized()
         .await?;
     let login_id = app
@@ -99,7 +161,7 @@ async fn account_dictation_uses_selected_workspace_and_never_falls_back_to_perso
     }))?;
     let request = app.send_thread_realtime_start_request(params).await?;
     let _: ThreadRealtimeStartResponse = app.read_response(request).await?;
-    if status == 200 {
+    if status == 200 && routing_status == 200 {
         timeout(
             Duration::from_secs(/*secs*/ 15),
             app.read_stream_until_notification_message("thread/realtime/started"),
@@ -158,7 +220,14 @@ async fn account_dictation_uses_selected_workspace_and_never_falls_back_to_perso
             .params
             .expect("dictation error params")
             .to_string();
-        assert!(error.contains("HTTP 403"), "{error}");
+        assert!(
+            error.contains(if routing_status == 200 {
+                "HTTP 403"
+            } else {
+                "routing"
+            }),
+            "{error}"
+        );
         assert!(!error.contains("private-upstream-error"));
         assert!(!error.contains("personal-key-must-not-be-used"));
         assert!(stream.connections().is_empty());

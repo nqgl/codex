@@ -35,11 +35,16 @@ impl AuthProvider for UnscopedAuth {
 async fn refuses_unscoped_account_before_requesting_a_connection() {
     let server = MockServer::start().await;
     let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
-    let error = ChatgptDictationStream::connect(&server.uri(), Arc::new(UnscopedAuth), &factory)
-        .await
-        .err()
-        .unwrap()
-        .to_string();
+    let error = ChatgptDictationStream::connect(
+        &server.uri(),
+        Arc::new(UnscopedAuth),
+        &factory,
+        HeaderMap::new(),
+    )
+    .await
+    .err()
+    .unwrap()
+    .to_string();
     assert_eq!(
         error,
         "stream error: ChatGPT dictation: a signed-in ChatGPT workspace is required"
@@ -113,9 +118,14 @@ async fn account_stream_emits_partial_before_commit_and_authoritative_revision_a
         let _ = ws.next().await;
     });
     let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
-    let stream = ChatgptDictationStream::connect(&http.uri(), Arc::new(WorkAuth), &factory)
-        .await
-        .unwrap();
+    let stream = ChatgptDictationStream::connect(
+        &http.uri(),
+        Arc::new(WorkAuth),
+        &factory,
+        HeaderMap::new(),
+    )
+    .await
+    .unwrap();
     let (audio_tx, audio_rx) = async_channel::bounded(/*cap*/ 4);
     let (event_tx, event_rx) = async_channel::bounded(/*cap*/ 4);
     let client = tokio::spawn(stream.run(audio_rx, event_tx));
@@ -181,11 +191,16 @@ async fn bootstrap_denials_and_redirects_fail_without_exposing_bodies_or_tickets
             .expect(/*r*/ 1)
             .mount(&server)
             .await;
-        let error = ChatgptDictationStream::connect(&server.uri(), Arc::new(WorkAuth), &factory)
-            .await
-            .err()
-            .unwrap()
-            .to_string();
+        let error = ChatgptDictationStream::connect(
+            &server.uri(),
+            Arc::new(WorkAuth),
+            &factory,
+            HeaderMap::new(),
+        )
+        .await
+        .err()
+        .unwrap()
+        .to_string();
         assert!(error.contains(&status.to_string()));
         assert!(!error.contains("sensitive-ticket-and-transcript"));
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
@@ -199,7 +214,8 @@ async fn rejects_untrusted_bootstrap_and_stream_destinations_before_sending_cred
         ChatgptDictationStream::connect(
             "https://chatgpt.com.evil.example",
             Arc::new(WorkAuth),
-            &factory
+            &factory,
+            HeaderMap::new(),
         )
         .await
         .is_err()
@@ -208,11 +224,16 @@ async fn rejects_untrusted_bootstrap_and_stream_destinations_before_sending_cred
     Mock::given(path("/codex/dictation-stream-connect-info"))
         .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_json(json!({"websocketUrl":"wss://evil.example/secret-ticket","protocols":["secret-ticket"]})))
         .mount(&server).await;
-    let error = ChatgptDictationStream::connect(&server.uri(), Arc::new(WorkAuth), &factory)
-        .await
-        .err()
-        .unwrap()
-        .to_string();
+    let error = ChatgptDictationStream::connect(
+        &server.uri(),
+        Arc::new(WorkAuth),
+        &factory,
+        HeaderMap::new(),
+    )
+    .await
+    .err()
+    .unwrap()
+    .to_string();
     assert_eq!(
         error,
         "stream error: ChatGPT dictation: untrusted streaming destination or invalid connection ticket"

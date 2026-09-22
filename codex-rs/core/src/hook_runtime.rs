@@ -735,7 +735,7 @@ pub(crate) async fn record_pending_input(
                 .await;
         }
         TurnInput::FunctionCallOutput(item) => {
-            sess.record_conversation_items(turn_context, model_info, std::slice::from_ref(&item))
+            sess.record_annotated_conversation_items(turn_context, model_info, vec![item.clone()])
                 .await;
             if let ResponseItem::FunctionCallOutput {
                 id: Some(id),
@@ -743,7 +743,7 @@ pub(crate) async fn record_pending_input(
                 namespace,
                 output,
                 ..
-            } = item
+            } = item.item
             {
                 let item = TurnItem::FunctionCallOutput(FunctionCallOutputItem {
                     id: id.to_string(),
@@ -962,6 +962,7 @@ fn hook_run_analytics_payload(
                 .clone()
                 .unwrap_or_else(|| turn_context.sub_id.clone()),
             turn_context.originator.clone(),
+            /*turn_metadata*/ None,
         ),
         HookRunFact {
             event_name: completed.run.event_name,

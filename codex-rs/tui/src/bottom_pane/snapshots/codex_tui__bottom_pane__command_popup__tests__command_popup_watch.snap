@@ -5,11 +5,11 @@ expression: "format!(\"{buf:?}\")"
 Buffer {
     area: Rect { x: 0, y: 0, width: 72, height: 1 },
     content: [
-        "  /watch  notify Codex when a directory or Git HEAD changes             ",
+        "› /watch  notify Codex when a directory or Git HEAD changes             ",
     ],
     styles: [
-        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 2, y: 0, fg: Cyan, bg: Reset, underline: Reset, modifier: BOLD,
-        x: 59, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 10, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 59, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
     ]
 }

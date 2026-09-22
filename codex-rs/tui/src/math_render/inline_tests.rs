@@ -38,7 +38,11 @@ fn inline_ranges_respect_code_links_displays_and_unfinished_input() {
 }
 
 #[test]
-fn unsupported_inline_math_keeps_delimiters_and_subscripts() {
+fn disabled_inline_math_keeps_delimiters_and_subscripts() {
+    crate::markdown_render::preferences::init(codex_config::types::TuiRendering {
+        math: false,
+        ..Default::default()
+    });
     let source = "**Only** \\(m/\\sqrt{as+V}\\), with \\(V\\).";
     let lines = crate::markdown::render_markdown_agent_with_links_and_cwd(
         source,
@@ -57,6 +61,7 @@ fn unsupported_inline_math_keeps_delimiters_and_subscripts() {
         source,
         Some(60),
         /*cwd*/ None,
+        crate::markdown_render::ListSpacing::AfterMultiline,
     );
     assert_eq!(streamed.lines, lines);
 }

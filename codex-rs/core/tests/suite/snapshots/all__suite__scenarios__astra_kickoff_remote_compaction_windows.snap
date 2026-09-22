@@ -16,15 +16,15 @@ Settings:
   text: {"verbosity":"low"}
   tool_choice: "auto"
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=d4f3e164a92d9bf1):
-        - namespace/functions; hash=e7db0a45c4ec3157
+00:additional_tools/developer (3; hash=a30eaceee178e328):
+        - namespace/functions; hash=00e4fd28e91e9a57
           - custom/exec
           - function/wait
           - function/request_user_input
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=43f195d9cc99ee15
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=4f62b42ee52b8a00
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -115,9 +115,9 @@ Settings:
 
     There are 4 available concurrency slots, meaning that up to 4 agents can be active at once, including you.
 
-    Full-history forks (`fork_turns` omitted or `"all"`) inherit the parent model and reasoning effort and d...ne"` or a positive integer string.</multi_agent_role> [hash=c7f52e90688299ce]
+    Prefer the parent model and reasoning effort for ordinary delegation, especially for a full-history fork...y genuinely need the full context.</multi_agent_role> [hash=51ab9bc39310de26]
 04:message/developer:
-    <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. D...elegation, or parallel agent work.</multi_agent_mode> [hash=2b6e037067b4390c]
+    <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. D...elegation, or parallel agent work.</multi_agent_mode> [hash=830471364ed27b68]
 05:message/user[2]:
     [01] # AGENTS.md instructions for <AGENTS_DIRECTORY>
 
@@ -190,15 +190,15 @@ Settings:
 ## Window 2 (after request 3: input diverged at item 02)
 Settings: same as window 1
 -- request 4 (turn) --
-00:additional_tools/developer (3; hash=d4f3e164a92d9bf1):
-        - namespace/functions; hash=e7db0a45c4ec3157
+00:additional_tools/developer (3; hash=a30eaceee178e328):
+        - namespace/functions; hash=00e4fd28e91e9a57
           - custom/exec
           - function/wait
           - function/request_user_input
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=43f195d9cc99ee15
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=4f62b42ee52b8a00
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -294,9 +294,9 @@ Settings: same as window 1
 
     There are 4 available concurrency slots, meaning that up to 4 agents can be active at once, including you.
 
-    Full-history forks (`fork_turns` omitted or `"all"`) inherit the parent model and reasoning effort and d...ne"` or a positive integer string.</multi_agent_role> [hash=c7f52e90688299ce]
+    Prefer the parent model and reasoning effort for ordinary delegation, especially for a full-history fork...y genuinely need the full context.</multi_agent_role> [hash=51ab9bc39310de26]
 07:message/developer:
-    <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. D...elegation, or parallel agent work.</multi_agent_mode> [hash=2b6e037067b4390c]
+    <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. D...elegation, or parallel agent work.</multi_agent_mode> [hash=830471364ed27b68]
 08:message/user[2]:
     [01] # AGENTS.md instructions for <AGENTS_DIRECTORY>
 

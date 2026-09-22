@@ -56,10 +56,11 @@ impl ChatgptDictationStream {
         base_url: &str,
         auth: SharedAuthProvider,
         factory: &HttpClientFactory,
+        routing_headers: http::HeaderMap,
     ) -> Result<Self, ApiError> {
         timeout(
             Duration::from_secs(/*secs*/ 10),
-            Self::connect_inner(base_url, auth, factory),
+            Self::connect_inner(base_url, auth, factory, routing_headers),
         )
         .await
         .map_err(|_| failure("connection timed out"))?
@@ -69,6 +70,7 @@ impl ChatgptDictationStream {
         base_url: &str,
         auth: SharedAuthProvider,
         factory: &HttpClientFactory,
+        routing_headers: http::HeaderMap,
     ) -> Result<Self, ApiError> {
         let mut base = Url::parse(base_url).map_err(|_| failure("invalid account service URL"))?;
         let local = base.host_str().is_some_and(|host| {
@@ -80,7 +82,7 @@ impl ChatgptDictationStream {
             || base.query().is_some()
             || base.fragment().is_some()
             || !(base.scheme() == "https" && base.host_str().is_some_and(is_allowed_chatgpt_host)
-                || local && base.scheme() == "http")
+                || local && matches!(base.scheme(), "http" | "https"))
         {
             return Err(failure(
                 "account service must be a trusted ChatGPT HTTPS origin",
@@ -108,6 +110,7 @@ impl ChatgptDictationStream {
         let http = RouteAwareClientPool::with_chatgpt_cloudflare_cookies_without_redirects_or_request_logging(factory.clone(), ClientRouteClass::Api);
         let mut response = http
             .request(http::Method::POST, &url)
+            .headers(routing_headers)
             .headers(headers)
             .send()
             .await

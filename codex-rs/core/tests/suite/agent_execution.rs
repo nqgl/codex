@@ -57,7 +57,7 @@ async fn mount_root_collaboration_call(
     call_id: &'static str,
     tool_name: &'static str,
     arguments: serde_json::Value,
-) {
+) -> ResponseMock {
     let response_id = format!("resp-{call_id}");
     mount_sse_once_match(
         server,
@@ -85,7 +85,7 @@ async fn mount_root_collaboration_call(
             ev_completed(&completion_id),
         ]),
     )
-    .await;
+    .await
 }
 
 async fn mount_completed_worker(
@@ -108,7 +108,16 @@ async fn mount_completed_worker(
     .await;
     let parent_wake = mount_sse_once_match(
         server,
-        |request: &wiremock::Request| body_contains(request, "Message Type: FINAL_ANSWER"),
+        move |request: &wiremock::Request| {
+            has_function_call_output(request, parent_call_id)
+                && body_contains(request, "Message Type: FINAL_ANSWER")
+                && serde_json::from_slice::<serde_json::Value>(&request.body).is_ok_and(|body| {
+                    body["input"]
+                        .as_array()
+                        .and_then(|input| input.last())
+                        .is_some_and(|item| item["type"] == "agent_message")
+                })
+        },
         sse(vec![
             ev_response_created("resp-parent-child-complete"),
             ev_assistant_message("msg-parent-child-complete", "completion received"),
@@ -444,10 +453,7 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
             permission_profile: PermissionProfileSnapshot::legacy(child_permissions),
             shell_environment_policy: Default::default(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
-            windows_sandbox_private_desktop: test
-                .config
-                .permissions
-                .windows_sandbox_private_desktop,
+            windows_sandbox_type: test.config.permissions.windows_sandbox_type,
             use_legacy_landlock: test.config.features.use_legacy_landlock(),
             exec_policy: None,
             mcp_policy: None,
@@ -628,3 +634,6 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools(
 
     Ok(())
 }
+
+#[path = "agent_eviction_tests.rs"]
+mod eviction_tests;

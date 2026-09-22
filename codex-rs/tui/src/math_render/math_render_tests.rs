@@ -90,7 +90,11 @@ fn math_vocabulary_is_bounded() {
 }
 
 #[test]
-fn unavailable_rendering_preserves_delimiters_and_markdown() {
+fn disabled_rendering_preserves_delimiters_and_markdown() {
+    crate::markdown_render::preferences::init(codex_config::types::TuiRendering {
+        math: false,
+        ..Default::default()
+    });
     let source = "**Before**\n\n\\[\nx^2+y^2=1\n\\]\n\nAfter.";
     let rendered = crate::markdown::render_markdown_agent_with_links_and_cwd(
         source,
@@ -129,7 +133,7 @@ fn math_does_not_break_reference_links_or_narrow_layouts() {
             .iter()
             .map(|line| line.line.to_string())
             .collect::<Vec<_>>(),
-        vec!["$", "$", "x", "$", "$"]
+        vec!["x"]
     );
 }
 

@@ -1,10 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/dictation.rs
-assertion_line: 23
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
 "                                                                                "
 "› Ask Codex to do anything                                                      "
 "                                                                                "
-"   F8 listening · release to insert                                             "
+"  F8 listening · release to insert                                              "

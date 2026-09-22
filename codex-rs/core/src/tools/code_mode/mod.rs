@@ -4,6 +4,7 @@ mod bundle_truncation;
 mod delegate;
 mod execute_handler;
 pub(crate) mod execute_spec;
+mod output;
 mod response_adapter;
 mod telemetry;
 mod wait_handler;
@@ -55,6 +56,7 @@ use delegate::CodeModeCellDelegate;
 use delegate::CodeModeDispatchBroker;
 use delegate::CodeModeDispatchWorker;
 pub(crate) use execute_handler::CodeModeExecuteHandler;
+use output::CodeModeToolOutput;
 use response_adapter::into_function_call_output_content_items;
 pub(crate) use wait_handler::CodeModeWaitHandler;
 
@@ -281,67 +283,49 @@ impl CodeModeService {
     }
 }
 
-pub(super) async fn handle_runtime_response(
+async fn handle_runtime_response(
     exec: &ExecContext,
     model_info: &codex_protocol::openai_models::ModelInfo,
     response: RuntimeResponse,
     max_output_tokens: Option<usize>,
     wall_time: Duration,
-) -> Result<FunctionToolOutput, String> {
+    experimental_show_cell_overhead: bool,
+) -> CodeModeToolOutput {
     let script_status = format_script_status(&response);
     let supports_original = can_request_original_image_detail(model_info);
+    let host_duration = response
+        .code_mode_host_duration()
+        .filter(|_| experimental_show_cell_overhead);
 
-    match response {
-        RuntimeResponse::Yielded { content_items, .. } => {
-            let mut content_items = into_function_call_output_content_items(content_items);
-            sanitize_image_detail_items(supports_original, &mut content_items);
-            content_items = bundle_truncation::truncate_code_mode_result_with_bundle(
-                exec,
-                content_items,
-                max_output_tokens,
-            )
-            .await;
-            prepend_script_status(&mut content_items, &script_status, wall_time);
-            Ok(FunctionToolOutput::from_content(content_items, Some(true)))
-        }
-        RuntimeResponse::Terminated { content_items, .. } => {
-            let mut content_items = into_function_call_output_content_items(content_items);
-            sanitize_image_detail_items(supports_original, &mut content_items);
-            content_items = bundle_truncation::truncate_code_mode_result_with_bundle(
-                exec,
-                content_items,
-                max_output_tokens,
-            )
-            .await;
-            prepend_script_status(&mut content_items, &script_status, wall_time);
-            Ok(FunctionToolOutput::from_content(content_items, Some(true)))
-        }
+    let (content_items, error_text) = match response {
+        RuntimeResponse::Yielded { content_items, .. }
+        | RuntimeResponse::Terminated { content_items, .. } => (content_items, None),
         RuntimeResponse::Result {
             content_items,
             error_text,
             ..
-        } => {
-            let mut content_items = into_function_call_output_content_items(content_items);
-            sanitize_image_detail_items(supports_original, &mut content_items);
-            let success = error_text.is_none();
-            if let Some(error_text) = error_text {
-                content_items.push(FunctionCallOutputContentItem::InputText {
-                    text: format!("Script error:\n{error_text}"),
-                });
-            }
-            content_items = bundle_truncation::truncate_code_mode_result_with_bundle(
-                exec,
-                content_items,
-                max_output_tokens,
-            )
-            .await;
-            prepend_script_status(&mut content_items, &script_status, wall_time);
-            Ok(FunctionToolOutput::from_content(
-                content_items,
-                Some(success),
-            ))
-        }
+        } => (content_items, error_text),
+    };
+    let mut content_items = into_function_call_output_content_items(content_items);
+    sanitize_image_detail_items(supports_original, &mut content_items);
+    let success = error_text.is_none();
+    if let Some(error_text) = error_text {
+        content_items.push(FunctionCallOutputContentItem::InputText {
+            text: format!("Script error:\n{error_text}"),
+        });
     }
+    content_items = bundle_truncation::truncate_code_mode_result_with_bundle(
+        exec,
+        content_items,
+        max_output_tokens,
+    )
+    .await;
+    CodeModeToolOutput::new(
+        FunctionToolOutput::from_content(content_items, Some(success)),
+        script_status,
+        wall_time,
+        host_duration,
+    )
 }
 
 fn format_script_status(response: &RuntimeResponse) -> String {
@@ -358,16 +342,6 @@ fn format_script_status(response: &RuntimeResponse) -> String {
             }
         }
     }
-}
-
-fn prepend_script_status(
-    content_items: &mut Vec<FunctionCallOutputContentItem>,
-    status: &str,
-    wall_time: Duration,
-) {
-    let wall_time_seconds = ((wall_time.as_secs_f32()) * 10.0).round() / 10.0;
-    let header = format!("{status}\nWall time {wall_time_seconds:.1} seconds\nOutput:\n");
-    content_items.insert(0, FunctionCallOutputContentItem::InputText { text: header });
 }
 
 // Submit synchronously so the recorder sees the call before the cell's dispatch gate closes.
@@ -452,6 +426,7 @@ fn submit_nested_tool(
             runtime_tool_call_id,
         },
         cancellation_token,
+        Arc::default(),
     );
     Ok(Box::pin(
         async move { Ok(result.await?.code_mode_result()) },

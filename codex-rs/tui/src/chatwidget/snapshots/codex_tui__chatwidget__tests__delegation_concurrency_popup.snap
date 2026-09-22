@@ -5,6 +5,7 @@ expression: popup
   Agent Concurrency
   Applies to this session only; config.toml is unchanged.
 
+
   1. 1            Primary agent only; delegation cannot run concurrently.
   2. 2            Primary agent plus up to 1 concurrent sub-agent.
   3. 3            Primary agent plus up to 2 concurrent sub-agents.
@@ -14,4 +15,4 @@ expression: popup
   7. 12           Primary agent plus up to 11 concurrent sub-agents.
   8. 16           Primary agent plus up to 15 concurrent sub-agents.
 
-  Press enter to confirm or esc to go back
+  enter select · esc back

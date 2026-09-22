@@ -4,6 +4,6 @@ expression: "rendered.lines.iter().map(rendered_line_text).collect::<Vec<_>>().j
 ---
 • Equation:
 
-  \[x^2\]
+  x²
 
   After equation.

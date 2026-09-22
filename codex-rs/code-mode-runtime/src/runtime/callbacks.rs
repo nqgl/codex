@@ -1,5 +1,6 @@
 use codex_code_mode_protocol::BUNDLE_TOOL_NAME;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
+use std::sync::Arc;
 
 use super::EXIT_SENTINEL;
 use super::RuntimeEvent;
@@ -267,7 +268,10 @@ pub(super) fn store_callback(
         }
     };
     if let Some(state) = scope.get_slot_mut::<RuntimeState>() {
-        state.stored_values.insert(key.clone(), serialized.clone());
+        let serialized = Arc::new(serialized);
+        state
+            .stored_values
+            .insert(key.clone(), Arc::clone(&serialized));
         state.stored_value_writes.insert(key, serialized);
     }
 }

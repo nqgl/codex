@@ -1,5 +1,5 @@
 //! Local math rendering. Source stays authoritative; pictures are a bounded UI cache.
-//! Unsupported terminals, exhausted budgets, and typesetting failures retain literal source.
+//! Unsupported terminals, exhausted budgets, and typesetting failures use the shared math fallback.
 mod graphics;
 mod inline;
 mod parser;
@@ -8,7 +8,6 @@ mod renderer;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::terminal_hyperlinks::HyperlinkLine;
-use ratatui::text::Line;
 use std::collections::HashMap;
 use std::io::Write;
 use std::io::{self};
@@ -125,6 +124,7 @@ pub(crate) fn revision() -> u64 {
 /// Whether the session has math images whose terminal placements can need repair.
 pub(crate) fn has_images() -> bool {
     ENABLED.load(Ordering::Relaxed)
+        && crate::markdown_render::preferences::current().math
         && STATE.get().is_some_and(|state| {
             !state
                 .lock()
@@ -141,13 +141,16 @@ pub(crate) fn set_mode(mode: &str) -> String {
         _ => !ENABLED.load(Ordering::Relaxed),
     };
     ENABLED.store(enabled, Ordering::Relaxed);
+    let mut rendering = crate::markdown_render::preferences::current();
+    rendering.math = enabled;
+    crate::markdown_render::preferences::init(rendering);
     REVISION.fetch_add(/*val*/ 1, Ordering::Relaxed);
     if !enabled {
         "Math rendering is off. Equations show their source.".into()
     } else if STATE.get().is_none() {
-        "Math rendering is on, but unavailable here. This version needs Linux, direct Kitty with true color, TeX Live, Poppler, and bubblewrap; equations stay as source.".into()
+        "Math rendering is on. Image typesetting needs Linux, direct Kitty with true color, TeX Live, Poppler, and bubblewrap; otherwise equations use Unicode or source.".into()
     } else {
-        "Math rendering is on. Completed equations render locally; unsupported equations stay as source.".into()
+        "Math rendering is on. Completed equations render locally; other equations use Unicode or source.".into()
     }
 }
 
@@ -175,10 +178,6 @@ pub(crate) fn invalidate_images() {
 pub(crate) fn has_math(source: &str) -> bool {
     (source.contains("\\[") || source.contains("$$")) && !parser::blocks(source).is_empty()
         || source.contains("\\(") && !inline::ranges(source).is_empty()
-}
-
-pub(crate) fn protect_inline_source(source: &str) -> String {
-    inline::prepare(source, |_| None).source
 }
 
 pub(crate) fn render(
@@ -222,6 +221,12 @@ fn render_display(
     let mut markers = ('\u{e000}'..='\u{f8ff}').filter(|ch| !source.contains(*ch));
     let mut start = 0;
     for block in blocks {
+        let raw = source[block.clone()].trim_end();
+        let formula = raw[2..raw.len() - 2].trim();
+        let Some(picture) = picture(formula, width, MathStyle::Display) else {
+            // The shared renderer owns Unicode fallback and raw-source preferences.
+            continue;
+        };
         let Some(marker) = markers.next() else {
             return markdown(source);
         };
@@ -229,12 +234,7 @@ fn render_display(
         rewritten.push_str("\n\n");
         rewritten.push(marker);
         rewritten.push_str("\n\n");
-        let raw = source[block.clone()].trim_end();
-        let formula = raw[2..raw.len() - 2].trim();
-        replacements.insert(
-            marker.to_string(),
-            picture(formula, width, MathStyle::Display).unwrap_or_else(|| literal(raw, width)),
-        );
+        replacements.insert(marker.to_string(), picture);
         start = block.end;
     }
     rewritten.push_str(&source[start..]);
@@ -248,24 +248,11 @@ fn render_display(
         .collect()
 }
 
-fn literal(source: &str, width: usize) -> Vec<HyperlinkLine> {
-    source
-        .lines()
-        .flat_map(|line| {
-            let safe: String = line
-                .chars()
-                .filter(|ch| !ch.is_control() || *ch == '\t')
-                .collect();
-            textwrap::wrap(&safe, width)
-                .into_iter()
-                .map(|line| Line::from(line.into_owned()).into())
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
 fn picture(source: &str, width: usize, style: MathStyle) -> Option<Vec<HyperlinkLine>> {
-    if !ENABLED.load(Ordering::Relaxed) || !parser::safe_math(source) {
+    if !ENABLED.load(Ordering::Relaxed)
+        || !crate::markdown_render::preferences::current().math
+        || !parser::safe_math(source)
+    {
         return None;
     }
     let state = STATE.get()?;

@@ -72,20 +72,9 @@ pub(super) fn prepare(
             prepared.source.extend(std::iter::repeat_n(marker, columns));
             prepared.pictures.insert(marker, lines);
         } else {
-            // Code spans preserve underscores, backslashes, and delimiters through Markdown.
-            // Choose a delimiter longer than any backtick run in the literal source.
-            let ticks = "`".repeat(
-                raw.split(|ch| ch != '`')
-                    .map(str::len)
-                    .max()
-                    .unwrap_or(/*default*/ 0)
-                    + 1,
-            );
-            prepared.source.push_str(&ticks);
-            prepared
-                .source
-                .extend(raw.chars().filter(|ch| !ch.is_control() || *ch == '\t'));
-            prepared.source.push_str(&ticks);
+            // MathMarkdown preserves the original delimiters when rendering is disabled or
+            // unsupported, and provides Unicode fallback while an image is unavailable.
+            prepared.source.push_str(raw);
         }
         start = range.end;
     }
@@ -183,6 +172,7 @@ pub(super) fn expand(
             composed.alignment = line.line.alignment;
             result.push(HyperlinkLine {
                 line: composed,
+                source: None,
                 hyperlinks: if row == text_row {
                     line.hyperlinks.clone()
                 } else {

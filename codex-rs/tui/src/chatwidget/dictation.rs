@@ -240,6 +240,7 @@ impl ChatWidget {
         }
         if !self.dictation.is_active()
             && (self.chat_keymap.next_permission_mode.is_pressed(key_event)
+                || self.chat_keymap.toggle_voice.is_pressed(key_event)
                 || self
                     .chat_keymap
                     .previous_permission_mode

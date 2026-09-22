@@ -41,8 +41,13 @@ impl ChatWidget {
         }
         if let Some(composer) = self.pop_latest_queued_composer_state() {
             self.restore_composer_state(composer);
+            self.refresh_startup_recovery();
             self.refresh_pending_input_preview();
             self.request_redraw();
+            return true;
+        }
+        if self.pending_image_submission.is_some() {
+            self.cancel_image_submission();
             return true;
         }
         false

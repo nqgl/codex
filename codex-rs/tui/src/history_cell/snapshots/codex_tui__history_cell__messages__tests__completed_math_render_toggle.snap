@@ -1,0 +1,8 @@
+---
+source: tui/src/history_cell/messages_tests.rs
+expression: "format!(\"Rendered:\\n{}\\nSource:\\n{}\", ratatui::text::Text::from(rich),\nratatui::text::Text::from(raw))"
+---
+Rendered:
+• Inline x² stays selectable.
+Source:
+• Inline $x^2$ stays selectable.
