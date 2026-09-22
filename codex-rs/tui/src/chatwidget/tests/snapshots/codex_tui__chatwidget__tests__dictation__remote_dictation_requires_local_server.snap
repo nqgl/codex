@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/dictation.rs
+expression: lines
+---
+■ Push-to-talk is available only with a local Codex server, not a remote server.

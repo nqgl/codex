@@ -1,5 +1,7 @@
 use super::*;
 use crate::chatwidget::dictation::DictationPhase;
+use crate::chatwidget::dictation::DictationState;
+use crate::status::remote_connection::RemoteConnectionStatus;
 use codex_app_server_protocol::ThreadRealtimeAudioChunk;
 use codex_app_server_protocol::ThreadRealtimeErrorNotification;
 use codex_app_server_protocol::ThreadRealtimeStartedNotification;
@@ -8,6 +10,53 @@ use codex_app_server_protocol::ThreadRealtimeTranscriptDoneNotification;
 use codex_protocol::protocol::RealtimeConversationVersion;
 use ratatui::backend::TestBackend;
 use ratatui::style::Modifier;
+
+#[tokio::test]
+async fn local_daemon_allows_dictation_keys_but_remote_server_does_not() {
+    let (mut chat, mut events, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config
+        .features
+        .enable(Feature::RealtimeConversation)
+        .expect("enable dictation");
+    chat.dictation = DictationState::new(/*hold_space_enabled*/ true);
+    chat.remote_connection = Some(RemoteConnectionStatus {
+        address: "unix:///tmp/codex-local-daemon.sock".into(),
+        version: "test".into(),
+        is_local_daemon: true,
+    });
+    assert!(chat.dictation_uses_local_server());
+    assert!(
+        chat.handle_dictation_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE,))
+    );
+    assert!(chat.bottom_pane.composer_is_empty());
+    assert!(chat.handle_dictation_key_event(KeyEvent {
+        kind: KeyEventKind::Release,
+        ..KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)
+    }));
+    assert_eq!(chat.bottom_pane.composer_text(), " ");
+    assert!(ops.try_recv().is_err());
+
+    chat.bottom_pane
+        .set_composer_text(String::new(), Vec::new(), Vec::new());
+    chat.remote_connection = Some(RemoteConnectionStatus {
+        address: "wss://remote.example.test".into(),
+        version: "test".into(),
+        is_local_daemon: false,
+    });
+    assert!(!chat.dictation_uses_local_server());
+    assert!(
+        !chat.handle_dictation_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE,))
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE));
+    let lines = drain_insert_history(&mut events)
+        .iter()
+        .flatten()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!("remote_dictation_requires_local_server", lines);
+    assert!(ops.try_recv().is_err());
+}
 
 #[tokio::test]
 async fn voice_start_waits_for_active_dictation() {

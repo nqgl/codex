@@ -740,13 +740,14 @@ impl RuntimeKeymap {
             },
         };
 
-        // Voice yields to explicitly configured shortcuts and chord prefixes.
+        // F8 belongs to composer dictation by default. Voice uses F9 unless explicitly
+        // rebound, and still yields to configured shortcuts and chord prefixes.
         let voice_toggle_default_is_shadowed = keymap.chat.toggle_voice.is_none()
-            && (configured_main_surface_alias_is_used(keymap, "f8")
-                || configured_context_alias_is_used(&keymap.vim_search, "f8")
+            && (configured_main_surface_alias_is_used(keymap, "f9")
+                || configured_context_alias_is_used(&keymap.vim_search, "f9")
                 || chords.bindings.iter().any(|binding| {
                     binding.action.context.overlaps(KeymapContext::Chat)
-                        && binding.chord.prefix.parts() == key_hint::plain(KeyCode::F(8)).parts()
+                        && binding.chord.prefix.parts() == key_hint::plain(KeyCode::F(9)).parts()
                 }));
 
         let mut chat = ChatKeymap {
@@ -1656,7 +1657,7 @@ impl RuntimeKeymap {
             },
             chords: Arc::default(),
             chat: ChatKeymap {
-                toggle_voice: default_bindings![plain(KeyCode::F(8))],
+                toggle_voice: default_bindings![plain(KeyCode::F(9))],
                 toggle_voice_mute: default_bindings![ctrl(KeyCode::Char('x'))],
                 chord_hints: Arc::default(),
                 interrupt_turn: default_bindings![plain(KeyCode::Esc)],

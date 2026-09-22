@@ -144,10 +144,43 @@ fn math_toggle_invalidates_the_render_cache() {
         set_mode("off"),
         "Math rendering is off. Equations show their source."
     );
-    assert!(!ENABLED.load(Ordering::Relaxed));
+    assert!(!crate::markdown_render::preferences::current().math);
     assert!(revision() > previous);
     set_mode("toggle");
-    assert!(ENABLED.load(Ordering::Relaxed));
+    assert!(crate::markdown_render::preferences::current().math);
+}
+
+#[test]
+fn math_override_survives_thread_settings_and_starts_from_configured_mode() {
+    let configured = codex_config::types::TuiRendering {
+        math: false,
+        ..Default::default()
+    };
+    crate::markdown_render::preferences::init(configured);
+    assert!(!crate::markdown_render::preferences::current().math);
+    set_mode("toggle");
+    assert!(crate::markdown_render::preferences::current().math);
+    set_mode("off");
+    crate::markdown_render::preferences::init(Default::default());
+    assert!(!crate::markdown_render::preferences::current().math);
+    let source = "Inline \\(x^2\\).";
+    let raw = crate::markdown::render_markdown_agent_with_links_and_cwd(
+        source,
+        Some(40),
+        /*cwd*/ None,
+    );
+    set_mode("toggle");
+    crate::markdown_render::preferences::init(configured);
+    assert!(crate::markdown_render::preferences::current().math);
+    let rendered = crate::markdown::render_markdown_agent_with_links_and_cwd(
+        source,
+        Some(40),
+        /*cwd*/ None,
+    );
+    insta::assert_snapshot!(format!(
+        "Raw: {}\nEnabled: {}",
+        raw[0].line, rendered[0].line
+    ));
 }
 
 #[test]

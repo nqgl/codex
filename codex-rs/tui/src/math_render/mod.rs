@@ -14,12 +14,22 @@ use std::io::{self};
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::PoisonError;
-use std::sync::atomic::AtomicBool;
+#[cfg(not(test))]
+use std::sync::atomic::AtomicU8;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 
-static ENABLED: AtomicBool = AtomicBool::new(/*v*/ true);
+const CONFIGURED_MATH_MODE: u8 = 0;
+const FORCE_MATH_ON: u8 = 1;
+const FORCE_MATH_OFF: u8 = 2;
+// `/math` is session-local and overrides resolved settings until this process exits.
+#[cfg(not(test))]
+static MATH_MODE_OVERRIDE: AtomicU8 = AtomicU8::new(CONFIGURED_MATH_MODE);
+#[cfg(test)]
+thread_local! {
+    static MATH_MODE_OVERRIDE: std::cell::Cell<u8> = const { std::cell::Cell::new(CONFIGURED_MATH_MODE) };
+}
 static REVISION: AtomicU64 = AtomicU64::new(/*v*/ 0);
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 const MAX_ENTRIES: usize = 128;
@@ -121,10 +131,25 @@ pub(crate) fn revision() -> u64 {
     REVISION.load(Ordering::Relaxed)
 }
 
+pub(crate) fn apply_mode_override(
+    mut rendering: codex_config::types::TuiRendering,
+) -> codex_config::types::TuiRendering {
+    #[cfg(not(test))]
+    let mode = MATH_MODE_OVERRIDE.load(Ordering::Relaxed);
+    #[cfg(test)]
+    let mode = MATH_MODE_OVERRIDE.get();
+    match mode {
+        CONFIGURED_MATH_MODE => {}
+        FORCE_MATH_ON => rendering.math = true,
+        FORCE_MATH_OFF => rendering.math = false,
+        _ => unreachable!("math override is assigned only known states"),
+    }
+    rendering
+}
+
 /// Whether the session has math images whose terminal placements can need repair.
 pub(crate) fn has_images() -> bool {
-    ENABLED.load(Ordering::Relaxed)
-        && crate::markdown_render::preferences::current().math
+    crate::markdown_render::preferences::current().math
         && STATE.get().is_some_and(|state| {
             !state
                 .lock()
@@ -138,9 +163,17 @@ pub(crate) fn set_mode(mode: &str) -> String {
     let enabled = match mode {
         "on" => true,
         "off" => false,
-        _ => !ENABLED.load(Ordering::Relaxed),
+        _ => !crate::markdown_render::preferences::current().math,
     };
-    ENABLED.store(enabled, Ordering::Relaxed);
+    let mode = if enabled {
+        FORCE_MATH_ON
+    } else {
+        FORCE_MATH_OFF
+    };
+    #[cfg(not(test))]
+    MATH_MODE_OVERRIDE.store(mode, Ordering::Relaxed);
+    #[cfg(test)]
+    MATH_MODE_OVERRIDE.set(mode);
     let mut rendering = crate::markdown_render::preferences::current();
     rendering.math = enabled;
     crate::markdown_render::preferences::init(rendering);
@@ -249,10 +282,7 @@ fn render_display(
 }
 
 fn picture(source: &str, width: usize, style: MathStyle) -> Option<Vec<HyperlinkLine>> {
-    if !ENABLED.load(Ordering::Relaxed)
-        || !crate::markdown_render::preferences::current().math
-        || !parser::safe_math(source)
-    {
+    if !crate::markdown_render::preferences::current().math || !parser::safe_math(source) {
         return None;
     }
     let state = STATE.get()?;

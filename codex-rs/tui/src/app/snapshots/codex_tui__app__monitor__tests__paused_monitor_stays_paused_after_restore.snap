@@ -1,0 +1,6 @@
+---
+source: tui/src/app/monitor_tests.rs
+expression: "message.replace(&temp.path().display().to_string(), \"<TEST_WORKSPACE>\")"
+---
+Command monitors (1):
+- agent-comms (paused, trusted output) in <TEST_WORKSPACE>: echo restored-monitor

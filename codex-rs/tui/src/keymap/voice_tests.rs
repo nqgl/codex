@@ -84,7 +84,8 @@ fn voice_mute_chord_dispatches_only_in_its_active_context() {
 #[test]
 fn voice_toggle_resolves_custom_bindings_unbinding_and_visible_hints() {
     for (config, expected) in [
-        ("", Some("f8")),
+        ("", Some("f9")),
+        ("[chat]\ntoggle_voice = 'f8'", Some("f8")),
         ("[chat]\ntoggle_voice = 'f9'", Some("f9")),
         ("[chat]\ntoggle_voice = []", None),
         ("[chat]\ntoggle_voice = 'f8 v'", Some("f8 v")),
@@ -103,10 +104,10 @@ fn voice_toggle_resolves_custom_bindings_unbinding_and_visible_hints() {
 #[test]
 fn voice_toggle_default_yields_to_existing_shortcuts_and_chord_prefixes() {
     for config in [
-        "[editor]\nkill_line_end = 'f8'",
-        "[vim_search]\nnext = 'f8'",
-        "[chat]\ntoggle_voice_mute = 'f8'",
-        "[global]\nopen_transcript = 'f8 t'",
+        "[editor]\nkill_line_end = 'f9'",
+        "[vim_search]\nnext = 'f9'",
+        "[chat]\ntoggle_voice_mute = 'f9'",
+        "[global]\nopen_transcript = 'f9 t'",
     ] {
         let config = toml::from_str::<TuiKeymap>(config).unwrap();
         let runtime = RuntimeKeymap::from_config(&config).expect("existing binding stays valid");

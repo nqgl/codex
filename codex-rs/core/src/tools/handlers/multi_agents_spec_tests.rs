@@ -145,6 +145,9 @@ fn spawn_agent_catalog_description_preserves_generated_context() {
     else {
         panic!("spawn_agent should be a function tool");
     };
+    assert!(default_tool.description.contains(
+        "Only call this tool for a concrete, bounded subtask that can run independently alongside useful local work; otherwise continue locally."
+    ));
     let ToolSpec::Function(mut configured_tool) =
         create_spawn_agent_tool_v2(options, Some("Catalog spawning guidance."))
     else {

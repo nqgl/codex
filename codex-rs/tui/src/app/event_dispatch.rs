@@ -724,6 +724,7 @@ impl App {
                     }
                 };
                 self.pause_monitors_for_fork();
+                self.persist_all_monitors().await;
                 self.chat_widget.restore_user_message_to_composer(prompt.clone());
                 // Stop on any post-mutation failure: accepting input against the old displayed
                 // transcript would hide the fact that server history has already changed.

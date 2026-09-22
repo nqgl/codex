@@ -46,7 +46,8 @@ async fn restore_thread_monitors_restarts_persisted_running_monitors() {
         .expect("persist monitor");
 
     let mut app = make_test_app().await;
-    app.state_db = Some(state_db);
+    app.state_db = Some(state_db.clone());
+    app.primary_thread_id = Some(thread_id);
     app.restore_thread_monitors(thread_id).await;
 
     assert_eq!(
@@ -61,6 +62,44 @@ async fn restore_thread_monitors_restarts_persisted_running_monitors() {
             state: MonitorState::Running,
             trust: MonitorTrust::Trusted,
         }]
+    );
+
+    app.pause_monitors_for_fork();
+    app.persist_all_monitors().await;
+    assert_eq!(
+        state_db
+            .list_thread_monitors(thread_id)
+            .await
+            .expect("list paused monitors"),
+        vec![codex_state::ThreadMonitor {
+            name: "agent-comms".to_string(),
+            command: "echo restored-monitor".to_string(),
+            cwd: temp.path().to_path_buf(),
+            trusted: true,
+            running: false,
+        }]
+    );
+    app.monitors.clear();
+    app.restore_thread_monitors(thread_id).await;
+    let statuses = app
+        .monitors
+        .iter()
+        .map(MonitorHandle::status)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        statuses,
+        vec![MonitorStatus {
+            name: "agent-comms".to_string(),
+            command: "echo restored-monitor".to_string(),
+            cwd: temp.path().to_path_buf(),
+            state: MonitorState::Paused,
+            trust: MonitorTrust::Trusted,
+        }]
+    );
+    let (message, _) = status_message(&statuses);
+    insta::assert_snapshot!(
+        "paused_monitor_stays_paused_after_restore",
+        message.replace(&temp.path().display().to_string(), "<TEST_WORKSPACE>")
     );
 }
 

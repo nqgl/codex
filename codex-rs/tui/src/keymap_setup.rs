@@ -1494,7 +1494,7 @@ mod tests {
         let mut view = build_keymap_debug_view(&RuntimeKeymap::defaults(), &TuiKeymap::default());
         view.show_delayed_hint_for_test();
 
-        view.handle_key_event(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE));
+        view.handle_key_event(KeyEvent::new(KeyCode::F(9), KeyModifiers::NONE));
 
         let rendered = render_debug(&view, /*width*/ 100);
         assert!(!rendered.contains("Still waiting?"));

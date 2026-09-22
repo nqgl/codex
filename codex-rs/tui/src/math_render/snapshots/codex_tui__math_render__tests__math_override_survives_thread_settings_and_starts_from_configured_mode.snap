@@ -1,0 +1,6 @@
+---
+source: tui/src/math_render/math_render_tests.rs
+expression: "format!(\"Raw: {}\\nEnabled: {}\", raw[0].line, rendered[0].line)"
+---
+Raw: Inline \(x^2\).
+Enabled: Inline x².

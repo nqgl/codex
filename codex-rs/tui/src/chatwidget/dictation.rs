@@ -221,6 +221,12 @@ fn append_transcript_segment(transcript: &mut String, segment: &str) {
 }
 
 impl ChatWidget {
+    pub(super) fn dictation_uses_local_server(&self) -> bool {
+        self.remote_connection
+            .as_ref()
+            .is_none_or(|connection| connection.is_local_daemon)
+    }
+
     pub(super) fn handle_dictation_key_event(&mut self, key_event: KeyEvent) -> bool {
         if !self.dictation.is_active() && self.realtime_conversation_is_running() {
             self.dictation.space_hold_armed = false;
@@ -260,7 +266,7 @@ impl ChatWidget {
             && self.bottom_pane.composer_is_empty()
             && !self.blocks_direct_input
             && self.config.features.enabled(Feature::RealtimeConversation)
-            && self.remote_connection.is_none();
+            && self.dictation_uses_local_server();
         match self
             .dictation
             .handle_key_event(key_event, can_arm_space_hold)
@@ -298,9 +304,9 @@ impl ChatWidget {
             );
             return;
         }
-        if self.remote_connection.is_some() {
+        if !self.dictation_uses_local_server() {
             self.add_error_message(
-                "Push-to-talk is currently available only with the local embedded app-server."
+                "Push-to-talk is available only with a local Codex server, not a remote server."
                     .to_string(),
             );
             return;

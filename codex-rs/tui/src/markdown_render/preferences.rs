@@ -15,6 +15,7 @@ thread_local! {
 }
 
 pub(crate) fn init(rendering: TuiRendering) {
+    let rendering = crate::math_render::apply_mode_override(rendering);
     #[cfg(not(test))]
     {
         *RENDERING

@@ -2368,11 +2368,22 @@ async fn tool_messages_follow_mid_turn_model_changes() -> Result<()> {
                         "parameters": tool["parameters"],
                     }))
                 }).into_iter().collect::<serde_json::Map<String, Value>>();
+                let exec_description = tool("exec")["description"]
+                    .as_str()
+                    .expect("Code Mode description");
+                let exec_prefix = format!(
+                    "Exec description for {}.",
+                    body["model"].as_str().expect("model")
+                );
+                assert!(exec_description.starts_with(&format!(
+                    "{exec_prefix}\n\nCustom runtime helpers:"
+                )));
+                assert!(exec_description.contains("`bundles.create(value)`"));
                 json!({
                     "model": body["model"],
                     "async_description": tool("request_user_input_async")["description"],
                     "multi_agent_messages": multi_agent_messages,
-                    "exec_description": tool("exec")["description"],
+                    "exec_description": exec_prefix,
                     "wait_description": tool("wait")["description"],
                     "wait_parameters": tool("wait")["parameters"],
                 })
