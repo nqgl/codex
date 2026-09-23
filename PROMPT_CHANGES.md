@@ -12,6 +12,9 @@ first-time treatment. Latest audited upstream baseline: `722dae7afd` (September 
 The original rewrite baseline was `35eaf3ffb0bf2001486c68c47a3d946b34d16634`.
 See [the September 22 integration record](glen/merge-2026-09-22.md) for compatibility
 decisions and validation.
+The [Rust 0.156.1 release-tag merge](glen/merge-2026-09-23-rust-v0.156.1.md)
+adds no prompt changes; the September 22 upstream baseline remains the latest
+audited `main` baseline.
 
 | Surface | Location | Change | Notes |
 |---|---|---|---|
