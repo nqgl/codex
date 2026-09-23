@@ -1,21 +1,23 @@
 //! Keyboard shortcuts for stepping the active model's reasoning effort.
 //!
 //! The main chat surface treats `Alt+,` and `Alt+.` as small adjustments to the
-//! current model configuration. This module keeps that behavior separate from
-//! the larger `ChatWidget` key dispatcher while still reusing the same
-//! model-selection and Plan-mode scope paths as the settings popups.
+//! current model configuration. `Shift+Up` and `Shift+Down` can also step through
+//! advanced levels. This module keeps that behavior separate from the larger
+//! `ChatWidget` key dispatcher while still reusing the same model-selection and
+//! Plan-mode scope paths as the settings popups.
 //!
 //! The shortcut state machine is deliberately narrow: it only handles key
 //! presses when no modal or popup owns input, it anchors unset reasoning to the
 //! current model preset's default, and it walks only efforts advertised by the
 //! active model. Unsupported efforts anchor to the model default, or the first
 //! advertised effort when the default is absent, before stepping through the
-//! advertised order. Raising never silently crosses into Max or Ultra; those
-//! efforts require the explicit advanced-reasoning picker.
+//! advertised order. `Alt+.` stops before Max or Ultra; `Shift+Up` can enter
+//! either level when the active model advertises it.
 
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 
 use super::ChatWidget;
@@ -118,6 +120,7 @@ impl ChatWidget {
 
         if direction == ReasoningShortcutDirection::Raise
             && Self::is_advanced_reasoning_effort(&next_effort)
+            && !crate::key_hint::shift(KeyCode::Up).is_press(key_event)
         {
             let advanced_label = choices
                 .iter()
@@ -144,18 +147,18 @@ impl ChatWidget {
             return true;
         }
 
+        let warning = self.ultra_reasoning_concurrency_warning(&next_effort);
         if self.collaboration_modes_enabled() && self.active_mode_kind() == ModeKind::Plan {
-            let warning = self.ultra_reasoning_concurrency_warning(&next_effort);
             self.app_event_tx
                 .send(AppEvent::UpdatePlanModeReasoningEffort(Some(next_effort)));
-            if let Some(warning) = warning {
-                self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-                    crate::history_cell::new_warning_event(warning),
-                )));
-            }
         } else {
             self.app_event_tx
                 .send(AppEvent::UpdateReasoningEffort(Some(next_effort)));
+        }
+        if let Some(warning) = warning {
+            self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                crate::history_cell::new_warning_event(warning),
+            )));
         }
 
         true

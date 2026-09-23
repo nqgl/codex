@@ -398,6 +398,33 @@ async fn reasoning_shortcut_in_plan_mode_updates_plan_override_without_prompt_or
 }
 
 #[tokio::test]
+async fn shift_up_reaches_ultra_in_plan_mode_without_changing_global_effort() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-6-sol")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
+        .expect("expected plan collaboration mode");
+    chat.set_collaboration_mask(plan_mask);
+    let _ = drain_insert_history(&mut rx);
+    chat.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::Max));
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::UpdatePlanModeReasoningEffort(Some(ReasoningEffortConfig::Ultra))
+    )));
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        AppEvent::UpdateReasoningEffort(_)
+            | AppEvent::PersistPlanModeReasoningEffort(_)
+            | AppEvent::PersistModelSelection { .. }
+            | AppEvent::OpenPlanReasoningScopePrompt { .. }
+    )));
+}
+
+#[tokio::test]
 async fn advanced_reasoning_selection_in_plan_mode_uses_expected_scope() {
     for effort in [ReasoningEffortConfig::Ultra, ReasoningEffortConfig::Max] {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;

@@ -3993,6 +3993,89 @@ async fn reasoning_down_shortcuts_lower_reasoning_effort() {
 }
 
 #[tokio::test]
+async fn shift_arrows_step_through_max_and_ultra_without_persisting() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-6-sol")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.show_welcome_banner = false;
+
+    for (current, key, expected) in [
+        (
+            ReasoningEffortConfig::XHigh,
+            KeyCode::Up,
+            ReasoningEffortConfig::Max,
+        ),
+        (
+            ReasoningEffortConfig::Max,
+            KeyCode::Up,
+            ReasoningEffortConfig::Ultra,
+        ),
+        (
+            ReasoningEffortConfig::Ultra,
+            KeyCode::Down,
+            ReasoningEffortConfig::Max,
+        ),
+        (
+            ReasoningEffortConfig::Max,
+            KeyCode::Down,
+            ReasoningEffortConfig::XHigh,
+        ),
+    ] {
+        chat.set_reasoning_effort(Some(current));
+        chat.handle_key_event(KeyEvent::new(key, KeyModifiers::SHIFT));
+        let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+        assert_eq!(
+            events
+                .iter()
+                .filter_map(|event| match event {
+                    AppEvent::UpdateReasoningEffort(effort) => Some(effort.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![Some(expected.clone())]
+        );
+        assert!(events.iter().all(|event| !matches!(
+            event,
+            AppEvent::PersistModelSelection { .. } | AppEvent::ApplyAdvancedReasoning { .. }
+        )));
+    }
+
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::Ultra));
+    insta::assert_snapshot!(
+        "shift_arrows_reach_ultra_reasoning",
+        render_bottom_popup(&chat, /*width*/ 80)
+    );
+}
+
+#[tokio::test]
+async fn shift_up_to_ultra_keeps_the_high_concurrency_warning() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-6-sol")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.config
+        .multi_agent_v2
+        .max_concurrent_threads_per_session = 8;
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::Max));
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::UpdateReasoningEffort(Some(ReasoningEffortConfig::Ultra))
+    )));
+    let warnings = events
+        .into_iter()
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => {
+                Some(lines_to_single_string(&cell.transcript_lines(/*width*/ 80)))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(warnings.len(), 1);
+    insta::assert_snapshot!("shift_up_ultra_concurrency_warning", warnings[0]);
+}
+
+#[tokio::test]
 async fn reasoning_shortcut_clears_armed_quit_shortcut() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     chat.thread_id = Some(ThreadId::new());
