@@ -1,10 +1,12 @@
-//! Apply session model choices separately from saved model defaults.
+//! Apply model choices without re-entering the app event dispatcher.
 //!
-//! A successful config write can still be overridden. Report that distinction without
-//! replacing the active task's explicit selection with launch-time configuration.
+//! Ordinary model events and Astra picker actions use the same handlers. Session-only choices
+//! leave saved defaults untouched. A successful config write can still be overridden.
 
 use super::App;
+use crate::app_event::AppEvent;
 use crate::app_server_session::AppServerSession;
+use crate::config_update::format_config_error;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::WriteStatus;
@@ -13,12 +15,85 @@ use codex_protocol::openai_models::ReasoningEffort;
 use color_eyre::eyre::Result;
 
 impl App {
+    pub(super) async fn update_model(&mut self, app_server: &mut AppServerSession, model: String) {
+        if self
+            .active_thread_model_setting_update_params(model.clone())
+            .is_some_and(|params| params.permissions.is_some())
+            && self.reject_pending_permission_change()
+        {
+            return;
+        }
+        let model_changed = self.chat_widget.current_model() != model
+            || self.chat_widget.current_collaboration_mode().model() != model;
+        if model_changed {
+            self.chat_widget.set_model(&model);
+            self.sync_active_thread_model_setting(app_server, model, /*effort*/ None)
+                .await;
+            self.sync_active_thread_service_tier_to_cached_session()
+                .await;
+        }
+    }
+
+    pub(super) async fn apply_advanced_reasoning_choice(
+        &mut self,
+        app_server: &mut AppServerSession,
+        model: String,
+        effort: ReasoningEffort,
+    ) {
+        self.app_event_tx.send(AppEvent::FollowTranscript);
+        if self
+            .active_thread_model_setting_update_params(model.clone())
+            .is_some_and(|params| params.permissions.is_some())
+            && self.reject_pending_permission_change()
+        {
+            return;
+        }
+        let model_changed = self.chat_widget.current_model() != model
+            || self.chat_widget.current_collaboration_mode().model() != model;
+        let default_effort = self.on_apply_advanced_reasoning(model.as_str(), effort.clone());
+        if model_changed {
+            self.sync_active_thread_model_setting(app_server, model.clone(), Some(effort.clone()))
+                .await;
+        } else if let Some(mut params) =
+            self.active_thread_reasoning_setting_update_params(Some(effort.clone()))
+        {
+            params.collaboration_mode = Some(self.chat_widget.effective_collaboration_mode());
+            self.send_thread_settings_update(app_server, params).await;
+        }
+        self.sync_active_thread_service_tier_to_cached_session()
+            .await;
+
+        if let Some(default_effort) = default_effort.as_ref()
+            && let Err(err) = self
+                .persist_model_defaults(
+                    app_server.request_handle(),
+                    crate::config_update::build_model_selection_edits(
+                        model.as_str(),
+                        Some(default_effort),
+                    ),
+                    "default model and reasoning effort",
+                )
+                .await
+        {
+            let error = format_config_error(&err);
+            tracing::error!(error = %error, "failed to persist conversation model");
+            self.chat_widget
+                .add_error_message(format!("Failed to save default model: {error}"));
+        } else {
+            self.chat_widget.add_info_message(
+                format!("Model changed to {model} {effort} for this conversation"),
+                /*hint*/ None,
+            );
+        }
+    }
+
     pub(super) async fn select_session_model(
         &mut self,
         app_server: &mut AppServerSession,
         model: String,
         effort: Option<ReasoningEffort>,
     ) {
+        self.app_event_tx.send(AppEvent::FollowTranscript);
         let model_changed = self.chat_widget.current_model() != model
             || self.chat_widget.current_collaboration_mode().model() != model;
         if model_changed
