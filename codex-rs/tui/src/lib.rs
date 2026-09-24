@@ -465,7 +465,7 @@ async fn connect_remote_app_server(
     let app_server = RemoteAppServerClient::connect(RemoteAppServerConnectArgs {
         endpoint,
         client_name: "codex-tui".to_string(),
-        client_version: env!("CARGO_PKG_VERSION").to_string(),
+        client_version: codex_build_info::backend_compatibility_version(),
         experimental_api: true,
         mcp_server_openai_form_elicitation: false,
         opt_out_notification_methods: Vec::new(),
@@ -671,7 +671,7 @@ where
             .unwrap_or_else(|err| panic!("cli session source should deserialize: {err}")),
         enable_codex_api_key_env: false,
         client_name: "codex-tui".to_string(),
-        client_version: env!("CARGO_PKG_VERSION").to_string(),
+        client_version: codex_build_info::backend_compatibility_version(),
         experimental_api: true,
         mcp_server_openai_form_elicitation: false,
         opt_out_notification_methods: Vec::new(),

@@ -99,6 +99,10 @@ async fn discovery_preserves_config_scope_and_bounds_server_requests() {
                     continue;
                 }
                 let mut response = if request["method"] == "initialize" {
+                    assert_eq!(
+                        request["params"]["clientInfo"]["version"],
+                        json!(codex_build_info::backend_compatibility_version())
+                    );
                     json!({"result": {"userAgent": "permission-discovery-test", "platformFamily": "unix", "platformOs": "linux"}})
                 } else {
                     requests.push(request.clone());

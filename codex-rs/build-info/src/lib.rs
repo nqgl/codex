@@ -12,6 +12,26 @@ use sha2::Sha256;
 
 static BUILD_INFO: OnceLock<BuildInfo> = OnceLock::new();
 
+// Source builds keep Cargo's 0.0.0 package version. The backend uses the client
+// version in model catalog and inference requests to select compatible models.
+// Advance this when integrating a newer upstream rust-v release.
+const SOURCE_BUILD_BACKEND_VERSION: &str = "0.156.1";
+
+/// Return the release-compatible version advertised to the Codex backend.
+pub fn backend_compatibility_version() -> String {
+    let package_version = format!(
+        "{}.{}.{}",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR"),
+        env!("CARGO_PKG_VERSION_PATCH")
+    );
+    if package_version == "0.0.0" {
+        SOURCE_BUILD_BACKEND_VERSION.to_string()
+    } else {
+        package_version
+    }
+}
+
 /// Initialize build information from the commit stamped into the calling executable.
 ///
 /// The environment lookup intentionally expands at the macro call site so Git

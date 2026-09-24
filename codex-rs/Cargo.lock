@@ -3740,6 +3740,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "codex-agent-identity",
+ "codex-build-info",
  "codex-config",
  "codex-http-client",
  "codex-keyring-store",
@@ -3995,6 +3996,7 @@ name = "codex-models-manager"
 version = "0.0.0"
 dependencies = [
  "chrono",
+ "codex-build-info",
  "codex-http-client",
  "codex-login",
  "codex-otel",
