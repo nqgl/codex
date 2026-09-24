@@ -18,6 +18,8 @@ use crate::directory_watch::DirectoryWatchCommand;
 use crate::directory_watch::parse_watch_command;
 use crate::goal_display::GOAL_USAGE;
 use crate::goal_files::GoalDraft;
+use crate::group::GroupCommand;
+use crate::group::parse_group_command;
 use crate::monitor::MonitorCommand;
 use crate::monitor::parse_monitor_command;
 
@@ -582,6 +584,10 @@ impl ChatWidget {
                 self.app_event_tx
                     .send(AppEvent::MonitorCommand(MonitorCommand::List));
             }
+            SlashCommand::Group => {
+                self.app_event_tx
+                    .send(AppEvent::GroupCommand(GroupCommand::Status));
+            }
             SlashCommand::MemoryDrop => {
                 self.add_app_server_stub_message("Memory maintenance");
             }
@@ -1085,6 +1091,10 @@ impl ChatWidget {
                     Err(err) => self.add_error_message(err),
                 }
             }
+            SlashCommand::Group => match parse_group_command(trimmed) {
+                Ok(command) => self.app_event_tx.send(AppEvent::GroupCommand(command)),
+                Err(err) => self.add_error_message(err),
+            },
             SlashCommand::Pets
                 if matches!(
                     args.trim().to_ascii_lowercase().as_str(),
@@ -1263,6 +1273,7 @@ impl ChatWidget {
             | SlashCommand::Stop
             | SlashCommand::Watch
             | SlashCommand::Monitor
+            | SlashCommand::Group
             | SlashCommand::AgentMessages
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate

@@ -103,6 +103,9 @@ impl App {
         }
 
         match event {
+            AppEvent::GroupCommand(command) => {
+                self.handle_group_command(command).await;
+            }
             AppEvent::DirectoryWatchCommand(command) => {
                 self.handle_directory_watch_command(command).await;
             }

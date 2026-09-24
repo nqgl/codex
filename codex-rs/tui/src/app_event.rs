@@ -60,6 +60,7 @@ use crate::directory_watch::DirectoryWatchCommand;
 use crate::directory_watch::DirectoryWatchNotification;
 use crate::experimental_features::FeatureWriteResult;
 use crate::goal_files::GoalDraft;
+use crate::group::GroupCommand;
 use crate::monitor::MonitorCommand;
 use crate::monitor::MonitorExit;
 use crate::monitor::MonitorNotification;
@@ -276,6 +277,8 @@ pub(crate) struct AgentsOverviewThreadRefresh {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, IntoStaticStr)]
 pub(crate) enum AppEvent {
+    /// Manage durable, user-owned group membership for the current root session.
+    GroupCommand(GroupCommand),
     /// Start, inspect, or stop the user-controlled directory watcher.
     DirectoryWatchCommand(DirectoryWatchCommand),
     /// Deliver a bounded batch from the active directory watcher.

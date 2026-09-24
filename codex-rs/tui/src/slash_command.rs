@@ -56,6 +56,7 @@ pub enum SlashCommand {
     Mention,
     Watch,
     Monitor,
+    Group,
     Status,
     Daemon,
     Warnings,
@@ -119,6 +120,7 @@ impl SlashCommand {
             SlashCommand::Mention => "mention a file",
             SlashCommand::Watch => "notify Codex when a directory or Git HEAD changes",
             SlashCommand::Monitor => "run a persistent command that notifies Codex on output",
+            SlashCommand::Group => "manage this session's peer group and name",
             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
@@ -200,6 +202,7 @@ impl SlashCommand {
                 | SlashCommand::Resume
                 | SlashCommand::Watch
                 | SlashCommand::Monitor
+                | SlashCommand::Group
                 | SlashCommand::AgentMessages
         )
     }
@@ -290,6 +293,7 @@ impl SlashCommand {
             | SlashCommand::Mention
             | SlashCommand::Watch
             | SlashCommand::Monitor
+            | SlashCommand::Group
             | SlashCommand::Skills
             | SlashCommand::Hooks
             | SlashCommand::Status

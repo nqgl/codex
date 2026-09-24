@@ -3,6 +3,7 @@ use super::*;
 use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use crate::directory_watch::DirectoryWatchCommand;
 use crate::directory_watch::DirectoryWatchFilter;
+use crate::group::GroupCommand;
 use crate::monitor::MonitorCommand;
 use crate::monitor::MonitorRequest;
 use crate::monitor::MonitorTrust;
@@ -3701,6 +3702,32 @@ async fn monitor_slash_command_starts_named_command() {
         }
         other => panic!("expected monitor add command, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn group_slash_command_is_user_controlled_and_reports_usage() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.dispatch_command_with_args(
+        SlashCommand::Group,
+        "join research alice".to_string(),
+        Vec::new(),
+    );
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::GroupCommand(GroupCommand::Join { group, name }))
+            if group == "research" && name == "alice"
+    );
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Group,
+        "join incomplete".to_string(),
+        Vec::new(),
+    );
+    let cells = drain_insert_history(&mut rx);
+    insta::assert_snapshot!(
+        lines_to_single_string(&cells[0]),
+        @"■ Usage: /group [join <group> <name>|leave]"
+    );
 }
 
 #[tokio::test]

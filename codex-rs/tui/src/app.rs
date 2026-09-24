@@ -226,6 +226,7 @@ mod event_dispatch;
 mod exit_summary;
 mod experimental_features;
 mod file_change_approvals;
+mod group;
 mod history_pagination;
 mod history_ui;
 mod input;

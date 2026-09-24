@@ -2077,6 +2077,7 @@ dependencies = [
  "codex-git-attribution",
  "codex-git-utils",
  "codex-goal-extension",
+ "codex-group-mail-extension",
  "codex-guardian-v2",
  "codex-history-notes-extension",
  "codex-home",
@@ -3444,6 +3445,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-group-mail-extension"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-core",
+ "codex-extension-api",
+ "codex-protocol",
+ "codex-state",
+ "codex-tools",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "codex-guardian-context"
 version = "0.0.0"
 dependencies = [
@@ -4681,6 +4703,7 @@ dependencies = [
  "codex-file-search",
  "codex-file-watcher",
  "codex-git-utils",
+ "codex-group-mail-extension",
  "codex-history",
  "codex-http-client",
  "codex-install-context",
