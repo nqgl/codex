@@ -9,6 +9,7 @@ mod analytics;
 mod app_installed;
 mod app_list;
 mod app_read;
+mod application_network;
 mod attestation;
 mod auto_env;
 mod bedrock_setup;

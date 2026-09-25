@@ -34,6 +34,8 @@ impl ChatWidget {
             session_telemetry,
         } = common;
         crate::math_render::initialize(app_event_tx.clone());
+        // Keep asynchronous widget callbacks scoped separately from the app and other widgets.
+        let app_event_tx = AppEventSender::new(app_event_tx.app_event_tx);
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
         config.model = model.clone();
