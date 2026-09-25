@@ -1,4 +1,5 @@
 use super::*;
+use codex_terminal_detection::Multiplexer;
 use pretty_assertions::assert_eq;
 
 const BOXED_POLYNOMIAL: &str = r"\boxed{
@@ -30,9 +31,10 @@ fn wide_equations_use_available_columns_and_shrink_to_fit() {
 }
 
 #[test]
-#[ignore = "requires Linux bubblewrap, TeX Live, and Poppler; run explicitly on a capable host"]
+#[ignore = "requires a local Typst executable; run explicitly on a capable host"]
 fn boxed_polynomial_typesets_locally() {
     let png = renderer::render(
+        &renderer::executable().expect("Typst must be installed"),
         BOXED_POLYNOMIAL,
         /*fg*/ (235, 235, 235),
         /*bg*/ (56, 56, 56),
@@ -49,6 +51,33 @@ fn boxed_polynomial_typesets_locally() {
         )
         .is_some()
     );
+}
+
+#[test]
+fn image_typesetting_accepts_direct_kitty_and_ghostty() {
+    let terminal = |name, multiplexer| TerminalInfo {
+        name,
+        multiplexer,
+        term_program: None,
+        term: None,
+        version: None,
+    };
+    assert!(supports_image_terminal(&terminal(
+        TerminalName::Kitty,
+        None
+    )));
+    assert!(supports_image_terminal(&terminal(
+        TerminalName::Ghostty,
+        None
+    )));
+    assert!(!supports_image_terminal(&terminal(
+        TerminalName::Ghostty,
+        Some(Multiplexer::Tmux { version: None }),
+    )));
+    assert!(!supports_image_terminal(&terminal(
+        TerminalName::WezTerm,
+        None
+    )));
 }
 
 #[test]
@@ -148,6 +177,7 @@ fn math_toggle_invalidates_the_render_cache() {
     assert!(revision() > previous);
     set_mode("toggle");
     assert!(crate::markdown_render::preferences::current().math);
+    insta::assert_snapshot!(set_mode("on"), @"Math rendering is on. Image typesetting needs macOS or Linux, direct Kitty or Ghostty with true color, and a local Typst installation; otherwise equations use Unicode or source.");
 }
 
 #[test]
@@ -223,9 +253,10 @@ fn placeholders_survive_wrapping_with_explicit_coordinates() {
 }
 
 #[test]
-#[ignore = "requires Linux bubblewrap, TeX Live, and Poppler; run explicitly on a capable host"]
-fn local_typesetting_is_sandboxed() {
+#[ignore = "requires a local Typst executable; run explicitly on a capable host"]
+fn local_typesetting_uses_bundled_mitex() {
     let png = renderer::render(
+        &renderer::executable().expect("Typst must be installed"),
         r"A=B^\top\in\mathbb R^{m\times n},\qquad\operatorname{rank}(A)\le n.",
         /*fg*/ (235, 235, 235),
         /*bg*/ (56, 56, 56),

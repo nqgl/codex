@@ -124,10 +124,11 @@ fn inline_image_wraps_as_a_word_and_preserves_its_columns_when_clipped() {
 }
 
 #[test]
-#[ignore = "requires Linux bubblewrap, TeX Live, and Poppler"]
+#[ignore = "requires a local Typst executable"]
 fn inline_tex_uses_text_sized_rasters() {
     for source in [r"u_t", r"m/\sqrt{as+V}"] {
         let png = crate::math_render::renderer::render(
+            &crate::math_render::renderer::executable().expect("Typst must be installed"),
             source,
             /*fg*/ (235, 235, 235),
             /*bg*/ (56, 56, 56),

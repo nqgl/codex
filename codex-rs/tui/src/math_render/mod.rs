@@ -8,6 +8,9 @@ mod renderer;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::terminal_hyperlinks::HyperlinkLine;
+use codex_terminal_detection::TerminalInfo;
+use codex_terminal_detection::TerminalName;
+use codex_terminal_detection::terminal_info;
 use std::collections::HashMap;
 use std::io::Write;
 use std::io::{self};
@@ -60,26 +63,21 @@ struct State {
 }
 
 pub(crate) fn initialize(events: AppEventSender) {
-    // Do not launch subprocesses or emit graphics in tests, multiplexers, or unknown terminals.
+    // Only direct terminals that support Kitty Unicode placeholders receive raster math.
     if cfg!(test)
-        || !cfg!(target_os = "linux")
-        || std::env::var("TERM").as_deref() != Ok("xterm-kitty")
+        || !cfg!(any(target_os = "linux", target_os = "macos"))
+        || !supports_image_terminal(&terminal_info())
         || ["TMUX", "STY", "ZELLIJ"]
             .iter()
             .any(|key| std::env::var_os(key).is_some())
         || crate::terminal_palette::stdout_color_level()
             != crate::terminal_palette::StdoutColorLevel::TrueColor
-        || ![
-            "/usr/bin/bwrap",
-            "/usr/bin/prlimit",
-            "/usr/bin/pdflatex",
-            "/usr/bin/pdftoppm",
-        ]
-        .iter()
-        .all(|path| std::path::Path::new(path).is_file())
     {
         return;
     }
+    let Some(typst) = renderer::executable() else {
+        return;
+    };
     STATE.get_or_init(|| {
         let (jobs, receiver) = mpsc::sync_channel::<Key>(BATCH_SIZE);
         std::thread::spawn(move || {
@@ -92,6 +90,7 @@ pub(crate) fn initialize(events: AppEventSender) {
                 {
                     let id = first_id + (batch * BATCH_SIZE + offset) as u32;
                     let result = renderer::render(
+                        &typst,
                         &key.source,
                         key.foreground,
                         key.background,
@@ -125,6 +124,10 @@ pub(crate) fn initialize(events: AppEventSender) {
             uploaded: 0,
         })
     });
+}
+
+fn supports_image_terminal(info: &TerminalInfo) -> bool {
+    info.multiplexer.is_none() && matches!(info.name, TerminalName::Ghostty | TerminalName::Kitty)
 }
 
 pub(crate) fn revision() -> u64 {
@@ -181,7 +184,7 @@ pub(crate) fn set_mode(mode: &str) -> String {
     if !enabled {
         "Math rendering is off. Equations show their source.".into()
     } else if STATE.get().is_none() {
-        "Math rendering is on. Image typesetting needs Linux, direct Kitty with true color, TeX Live, Poppler, and bubblewrap; otherwise equations use Unicode or source.".into()
+        "Math rendering is on. Image typesetting needs macOS or Linux, direct Kitty or Ghostty with true color, and a local Typst installation; otherwise equations use Unicode or source.".into()
     } else {
         "Math rendering is on. Completed equations render locally; other equations use Unicode or source.".into()
     }
