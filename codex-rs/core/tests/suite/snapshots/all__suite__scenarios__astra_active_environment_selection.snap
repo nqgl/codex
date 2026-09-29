@@ -6,15 +6,15 @@ Scenario: Astra starts in one workspace, switches for the next step of the activ
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=b1e101cdca5088a0):
-        - namespace/functions; hash=dead25325ac79c67
+00:additional_tools/developer (3; hash=01d97c999219028b):
+        - namespace/functions; hash=af464c1822041f67
           - custom/exec
           - function/wait
           - function/request_user_input
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=fd994b11525da73c
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=566e03ac3c3d3b31
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -90,9 +90,9 @@ Scenario: Astra starts in one workspace, switches for the next step of the activ
 
     There are 4 available concurrency slots, meaning that up to 4 agents can be active at once, including you.
 
-    Full-history forks (`fork_turns` omitted or `"all"`) inherit the parent model and reasoning effort and d...ne"` or a positive integer string.</multi_agent_role> [hash=c7f52e90688299ce]
+    Prefer the parent model and reasoning effort for ordinary delegation, especially for a full-history fork...y genuinely need the full context.</multi_agent_role> [hash=51ab9bc39310de26]
 04:message/developer:
-    <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. D...elegation, or parallel agent work.</multi_agent_mode> [hash=2b6e037067b4390c]
+    <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. D...elegation, or parallel agent work.</multi_agent_mode> [hash=830471364ed27b68]
 05:message/user:
     <environment_context>
       <cwd><CWD></cwd>

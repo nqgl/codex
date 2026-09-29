@@ -422,10 +422,10 @@ async fn browsing_requires_fresh_escape_presses_and_ignores_confirmation_repeats
         ("f8", vec![KeyCode::F(8)]),
         ("f8 v", vec![KeyCode::F(8), KeyCode::Char('v')]),
     ] {
-        app.keymap = RuntimeKeymap::from_config(&toml::from_str(&format!(
-            "[chat]\ntoggle_voice = '{binding}'"
-        ))?)
-        .expect("valid voice binding");
+        let keymap_config = toml::from_str(&format!("[chat]\ntoggle_voice = '{binding}'"))?;
+        app.keymap = RuntimeKeymap::from_config(&keymap_config).expect("valid voice binding");
+        app.chat_widget
+            .apply_keymap_update(keymap_config, &app.keymap);
         let thread_id = app.chat_widget.thread_id().unwrap();
         crate::chatwidget::activate_voice_for_thread(&mut app.chat_widget, thread_id);
         for key in keys {

@@ -11,8 +11,8 @@
 //! current model preset's default, and it walks only efforts advertised by the
 //! active model. Unsupported efforts anchor to the model default, or the first
 //! advertised effort when the default is absent, before stepping through the
-//! advertised order. `Alt+.` stops before Max or Ultra; `Shift+Up` can enter
-//! either level when the active model advertises it.
+//! advertised order. `Alt+.` stops before Ultra; `Shift+Up` can enter Max or
+//! Ultra when the active model advertises them.
 
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::openai_models::ModelPreset;
@@ -119,29 +119,16 @@ impl ChatWidget {
         };
 
         if direction == ReasoningShortcutDirection::Raise
-            && Self::is_advanced_reasoning_effort(&next_effort)
+            && next_effort == ReasoningEffortConfig::Ultra
             && !crate::key_hint::shift(KeyCode::Up).is_press(key_event)
         {
-            let advanced_label = choices
-                .iter()
-                .filter(|effort| Self::is_advanced_reasoning_effort(effort))
-                .map(Self::reasoning_effort_label)
-                .collect::<Vec<_>>()
-                .join(" and ");
-            let verb = if advanced_label.contains(" and ") {
-                "are"
-            } else {
-                "is"
-            };
             let model_path = if current_model.starts_with("codex-auto-") {
                 current_model
             } else {
                 format!("All models → {current_model}")
             };
             self.add_info_message(
-                format!(
-                    "{advanced_label} {verb} available under /model → {model_path} → More reasoning…"
-                ),
+                format!("Ultra is available under /model → {model_path} → More reasoning…"),
                 /*hint*/ None,
             );
             return true;

@@ -1,6 +1,7 @@
 //! TUI orchestration for an app-server-signaled, locally owned WebRTC voice session.
 //! Completed captions and both speakers' partials stay bounded across widget replacement.
 //! Interleaved speakers retain separate displays so settled caption text never reanimates.
+//! Speech recovery suppresses stale queued answers while preserving unspoken text fallbacks.
 
 mod recording_controls;
 mod transcript_replay;
@@ -261,6 +262,12 @@ impl ChatWidget {
     }
 
     pub(crate) fn toggle_realtime_conversation(&mut self) {
+        if self.realtime_conversation.phase != RealtimeConversationPhase::Inactive
+            && self.realtime_conversation.phase != RealtimeConversationPhase::Stopping
+        {
+            self.stop_realtime_conversation();
+            return;
+        }
         if self.dictation.phase != super::dictation::DictationPhase::Idle {
             self.add_info_message(
                 "Finish push-to-talk dictation before starting voice mode.".to_string(),
@@ -274,11 +281,6 @@ impl ChatWidget {
                 "Voice conversation is still stopping.".to_string(),
                 /*hint*/ None,
             );
-            return;
-        }
-
-        if self.realtime_conversation.phase != RealtimeConversationPhase::Inactive {
-            self.stop_realtime_conversation();
             return;
         }
 
@@ -1025,10 +1027,15 @@ impl ChatWidget {
     pub(crate) fn take_undelivered_realtime_speech_for_replay(
         &mut self,
     ) -> Vec<(ThreadId, String, ThreadItem)> {
+        let input_generation = self.realtime_conversation.input_generation;
         self.realtime_conversation
             .pending_speech
             .drain(..)
-            .filter(|delivery| !delivery.captioned)
+            .filter(|delivery| {
+                !delivery.captioned
+                    && (delivery.state == PendingSpeechState::AwaitingTurn
+                        || delivery.input_generation == input_generation)
+            })
             .map(|delivery| (delivery.thread_id, delivery.turn_id, delivery.item))
             .collect()
     }
@@ -1157,10 +1164,14 @@ impl ChatWidget {
     }
 
     fn restore_realtime_speech(&mut self, delivery: PendingRealtimeSpeech) {
-        if delivery.captioned {
-            return;
-        }
-        if self.thread_id() != Some(delivery.thread_id) {
+        // Do not append old queued speech under a newer question. An answer that
+        // never reached speech still needs its text fallback: a delayed user
+        // transcript can advance the generation after its delegation starts.
+        if delivery.captioned
+            || (delivery.state != PendingSpeechState::AwaitingTurn
+                && delivery.input_generation != self.realtime_conversation.input_generation)
+            || self.thread_id() != Some(delivery.thread_id)
+        {
             return;
         }
         self.forget_realtime_turn_origin(&delivery.turn_id);
@@ -1198,13 +1209,7 @@ impl ChatWidget {
         }
         self.forget_realtime_turn_origin(turn_id);
         for delivery in waiting {
-            if self.thread_id() == Some(delivery.thread_id) {
-                self.handle_thread_item(
-                    delivery.item,
-                    delivery.turn_id,
-                    super::ThreadItemRenderSource::Live,
-                );
-            }
+            self.restore_realtime_speech(delivery);
         }
     }
 
@@ -1855,6 +1860,8 @@ impl ChatWidget {
             .is_some();
         self.realtime_conversation = RealtimeConversationUiState {
             attempt_id: self.realtime_conversation.attempt_id,
+            // Keep parked speech tied to its input until it is taken for replay.
+            input_generation: self.realtime_conversation.input_generation,
             pending_speech: std::mem::take(&mut self.realtime_conversation.pending_speech),
             pending_history_cells,
             accepted_transcripts,
