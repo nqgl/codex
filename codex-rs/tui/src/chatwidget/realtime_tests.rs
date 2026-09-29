@@ -90,6 +90,16 @@ fn agent_item(item_id: &str, text: &str, phase: Option<MessagePhase>) -> ThreadI
     }
 }
 
+#[test]
+fn received_mail_stays_visible_during_voice_handoff() {
+    let message = agent_item(
+        "group-mail-received-123",
+        "From alice to bob:\nhello",
+        Some(MessagePhase::Commentary),
+    );
+    assert!(!crate::chatwidget::realtime::is_private_realtime_agent_item(&message));
+}
+
 fn start_item(chat: &mut ChatWidget, thread_id: ThreadId, turn_id: &str, item: ThreadItem) {
     chat.handle_server_notification(
         ServerNotification::ItemStarted(ItemStartedNotification {

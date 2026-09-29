@@ -30,6 +30,10 @@ mod exploration_groups;
 mod other_items;
 pub(crate) mod tools;
 
+#[cfg(test)]
+#[path = "thread_transcript/group_mail_tests.rs"]
+mod group_mail_tests;
+
 pub(crate) use activity_pages::fold_trailing_activity_details;
 pub(crate) use activity_pages::is_hidden_activity_detail;
 #[allow(
@@ -265,6 +269,13 @@ fn item_to_cells(
                 local_image_paths: item.local_image_paths(),
                 remote_image_urls: item.image_urls(),
             }));
+        }
+        ThreadItem::AgentMessage { id, text, .. }
+            if id.starts_with(codex_protocol::items::GROUP_MAIL_RECEIVED_ITEM_PREFIX) =>
+        {
+            cells.push(Arc::new(crate::history_cell::new_group_mail_message_cell(
+                text,
+            )));
         }
         ThreadItem::AgentMessage { text, .. } => {
             let parsed = parse_assistant_markdown(&text, cwd.as_path());

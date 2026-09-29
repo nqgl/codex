@@ -3929,6 +3929,9 @@ impl Session {
         model_info: &ModelInfo,
         communication: InterAgentCommunication,
     ) {
+        let received_group_mail = (communication.author.as_str() == "/root/group_mail"
+            && communication.recipient == codex_protocol::AgentPath::root())
+        .then(|| communication.content.clone());
         let response_item = communication.to_model_input_item();
         let (items, _) = self
             .prepare_conversation_items_for_history(
@@ -3952,6 +3955,22 @@ impl Session {
         ])
         .await;
         self.send_raw_response_items(turn_context, items).await;
+        if let Some(text) = received_group_mail {
+            let item = TurnItem::AgentMessage(codex_protocol::items::AgentMessageItem {
+                id: format!(
+                    "{}{}",
+                    codex_protocol::items::GROUP_MAIL_RECEIVED_ITEM_PREFIX,
+                    Uuid::now_v7()
+                ),
+                content: vec![codex_protocol::items::AgentMessageContent::Text { text }],
+                phase: Some(codex_protocol::models::MessagePhase::Commentary),
+                memory_citation: None,
+                delivery: None,
+                questions: None,
+            });
+            self.emit_turn_item_started(turn_context, &item).await;
+            self.emit_turn_item_completed(turn_context, item).await;
+        }
     }
 
     async fn maybe_warn_on_server_model_mismatch(

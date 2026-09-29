@@ -290,6 +290,14 @@ impl ChatWidget {
                     &turn_id,
                 );
             }
+            ThreadItem::AgentMessage { id, text, .. }
+                if id.starts_with(codex_protocol::items::GROUP_MAIL_RECEIVED_ITEM_PREFIX) =>
+            {
+                self.flush_answer_stream_with_separator();
+                self.prepare_assistant_message();
+                self.add_to_history(history_cell::new_group_mail_message_cell(text));
+                self.request_redraw();
+            }
             ThreadItem::AgentMessage {
                 id,
                 text,

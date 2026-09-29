@@ -39,6 +39,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 use ts_rs::TS;
 
+/// Marks UI-only transcript items created when a root session receives group mail.
+pub const GROUP_MAIL_RECEIVED_ITEM_PREFIX: &str = "group-mail-received-";
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 #[serde(tag = "type")]

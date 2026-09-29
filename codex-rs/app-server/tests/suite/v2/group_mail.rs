@@ -3,6 +3,9 @@
 use anyhow::Result;
 use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadReadParams;
+use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadStartParams;
@@ -87,7 +90,11 @@ async fn resume_delivers_older_low_mail_with_later_high_mail() -> Result<()> {
     };
     let mock = responses::mount_sse_sequence(
         &server,
-        vec![completed_response("initial"), completed_response("mail")],
+        vec![
+            completed_response("sender"),
+            completed_response("initial"),
+            completed_response("mail"),
+        ],
     )
     .await;
     let mut app = TestAppServer::builder()
@@ -107,6 +114,17 @@ async fn resume_delivers_older_low_mail_with_later_high_mail() -> Result<()> {
     let store = GroupMailStore::open(home.path()).await?;
     store.join(alice_id, "research", "alice").await?;
     store.join(bob_id, "research", "bob").await?;
+
+    app.send_turn_start_request(TurnStartParams {
+        thread_id: alice.thread.id.clone(),
+        input: vec![UserInput::Text {
+            text: "Ready to send".to_string(),
+            text_elements: Vec::new(),
+        }],
+        ..Default::default()
+    })
+    .await?;
+    let _: TurnCompletedNotification = app.read_notification("turn/completed").await?;
 
     app.send_turn_start_request(TurnStartParams {
         thread_id: bob.thread.id.clone(),
@@ -139,7 +157,7 @@ async fn resume_delivers_older_low_mail_with_later_high_mail() -> Result<()> {
         .await?;
     let resume = resumed_app
         .send_thread_resume_request(ThreadResumeParams {
-            thread_id: bob.thread.id,
+            thread_id: bob.thread.id.clone(),
             ..Default::default()
         })
         .await?;
@@ -160,8 +178,8 @@ async fn resume_delivers_older_low_mail_with_later_high_mail() -> Result<()> {
             .any(|peer| peer.name == "bob" && peer.online)
     );
     let requests = mock.requests();
-    assert_eq!(requests.len(), 2);
-    let body = requests[1].body_json().to_string();
+    assert_eq!(requests.len(), 3);
+    let body = requests[2].body_json().to_string();
     let first = body
         .find("From alice to bob:\\nfirst")
         .expect("first message");
@@ -170,5 +188,56 @@ async fn resume_delivers_older_low_mail_with_later_high_mail() -> Result<()> {
         .expect("second message");
     assert!(first < second);
     assert!(!body.contains("Priority:"));
+    assert!(!body.contains(codex_protocol::items::GROUP_MAIL_RECEIVED_ITEM_PREFIX));
+
+    let read = resumed_app
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: bob.thread.id,
+            include_turns: true,
+        })
+        .await?;
+    let received: ThreadReadResponse = resumed_app.read_response(read).await?;
+    let received_messages = received
+        .thread
+        .turns
+        .iter()
+        .flat_map(|turn| &turn.items)
+        .filter_map(|item| match item {
+            ThreadItem::AgentMessage { id, text, .. }
+                if id.starts_with(codex_protocol::items::GROUP_MAIL_RECEIVED_ITEM_PREFIX) =>
+            {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        received_messages,
+        vec!["From alice to bob:\nfirst\n\nFrom alice to bob:\nsecond"]
+    );
+
+    let resume = resumed_app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: alice.thread.id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let _: ThreadResumeResponse = resumed_app.read_response(resume).await?;
+    let read = resumed_app
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: alice.thread.id,
+            include_turns: true,
+        })
+        .await?;
+    let sender: ThreadReadResponse = resumed_app.read_response(read).await?;
+    assert!(
+        sender
+            .thread
+            .turns
+            .iter()
+            .flat_map(|turn| &turn.items)
+            .all(|item| !matches!(item, ThreadItem::AgentMessage { id, .. }
+                if id.starts_with(codex_protocol::items::GROUP_MAIL_RECEIVED_ITEM_PREFIX)))
+    );
     Ok(())
 }

@@ -221,9 +221,15 @@ pub(crate) fn is_private_realtime_agent_item(item: &ThreadItem) -> bool {
     if matches!(item, ThreadItem::Reasoning { .. }) {
         return true;
     }
-    let ThreadItem::AgentMessage { text, phase, .. } = item else {
+    let ThreadItem::AgentMessage {
+        id, text, phase, ..
+    } = item
+    else {
         return false;
     };
+    if id.starts_with(codex_protocol::items::GROUP_MAIL_RECEIVED_ITEM_PREFIX) {
+        return false;
+    }
     let text = text.trim_start();
     matches!(phase, Some(MessagePhase::Commentary))
         || (!matches!(phase, Some(MessagePhase::FinalAnswer))

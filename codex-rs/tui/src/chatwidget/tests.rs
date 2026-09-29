@@ -256,6 +256,8 @@ mod dynamic_activity_tests;
 mod exec_flow;
 mod goal_menu;
 mod goal_validation;
+#[path = "tests/group_mail_tests.rs"]
+mod group_mail_tests;
 mod guardian;
 pub(crate) mod helpers;
 #[path = "tests/history_projection.rs"]
