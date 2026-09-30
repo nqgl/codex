@@ -22,6 +22,26 @@ use wildmatch::WildMatchPattern;
 
 use crate::openai_models::ReasoningEffort;
 
+/// Selects bundled instruction wording without changing tool or safety behavior.
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptMode {
+    #[default]
+    Custom,
+    #[serde(alias = "default")]
+    Upstream,
+}
+
+impl PromptMode {
+    /// Selects wording for the captured mode, leaving runtime behavior unchanged.
+    pub fn select<T>(self, custom: T, upstream: T) -> T {
+        match self {
+            Self::Custom => custom,
+            Self::Upstream => upstream,
+        }
+    }
+}
+
 /// Limit for the text included in `codex.tool_result` log records.
 /// This does not affect model-visible output. Raising it can expose more tool data to logs.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, JsonSchema)]

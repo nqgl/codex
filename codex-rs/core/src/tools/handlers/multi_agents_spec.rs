@@ -22,6 +22,7 @@ const MAX_REASONING_EFFORT_CHARS_IN_SPAWN_AGENT_DESCRIPTION: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct SpawnAgentToolOptions {
+    pub prompt_mode: codex_protocol::config_types::PromptMode,
     pub available_models: Vec<ModelPreset>,
     pub agent_type_description: String,
     pub expose_agent_type: bool,
@@ -34,6 +35,7 @@ pub struct SpawnAgentToolOptions {
 impl Default for SpawnAgentToolOptions {
     fn default() -> Self {
         Self {
+            prompt_mode: Default::default(),
             available_models: Vec::new(),
             agent_type_description: String::new(),
             expose_agent_type: true,
@@ -88,6 +90,7 @@ pub fn create_spawn_agent_tool_v1(options: SpawnAgentToolOptions) -> ToolSpec {
                 inherited_model_guidance,
                 return_value_description,
                 options.usage_hint_text,
+                options.prompt_mode,
             ),
             strict: false,
             defer_loading: None,
@@ -130,6 +133,7 @@ pub fn create_spawn_agent_tool_v2(
             inherited_model_guidance,
             options.usage_hint_text,
             description_override,
+            options.prompt_mode,
         ),
         strict: false,
         defer_loading: None,
@@ -144,7 +148,7 @@ pub fn create_spawn_agent_tool_v2(
     })
 }
 
-pub fn create_send_input_tool_v1() -> ToolSpec {
+pub fn create_send_input_tool_v1(mode: codex_protocol::config_types::PromptMode) -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "target".to_string(),
@@ -172,7 +176,7 @@ pub fn create_send_input_tool_v1() -> ToolSpec {
         description: MULTI_AGENT_V1_NAMESPACE_DESCRIPTION.to_string(),
         tools: vec![ResponsesApiNamespaceTool::Function(ResponsesApiTool {
             name: "send_input".to_string(),
-            description: "Send a message to an existing agent. Use interrupt=true to redirect work immediately. Reusing an agent via send_input works well when the new task depends heavily on context that agent already holds."
+            description: mode.select("Send a message to an existing agent. Use interrupt=true to redirect work immediately. Reusing an agent via send_input works well when the new task depends heavily on context that agent already holds.", "Send a message to an existing agent. Use interrupt=true to redirect work immediately. You should reuse the agent by send_input if you believe your assigned task is highly dependent on the context of a previous task.")
                 .to_string(),
             strict: false,
             defer_loading: None,
@@ -675,6 +679,7 @@ fn spawn_agent_tool_description(
     inherited_model_guidance: Option<&str>,
     return_value_description: &str,
     usage_hint_text: Option<String>,
+    mode: codex_protocol::config_types::PromptMode,
 ) -> String {
     let agent_role_guidance = available_models_description.unwrap_or_default();
     let inherited_model_guidance = inherited_model_guidance.unwrap_or_default();
@@ -694,15 +699,17 @@ fn spawn_agent_tool_description(
     }
     let agent_role_usage_hint = available_models_description
         .map(|_| {
-            "The agent-role guidance below is for choosing which agent to use once spawning is appropriate; whether to spawn at all is decided separately by the session's delegation settings."
+            mode.select("The agent-role guidance below is for choosing which agent to use once spawning is appropriate; whether to spawn at all is decided separately by the session's delegation settings.", "Agent-role guidance below only helps choose which agent to use after spawning is already authorized; it never authorizes spawning by itself.")
         })
         .unwrap_or_default();
+    let override_reason = mode.select(" or there is a clear task-specific reason", "");
+    let authorization = mode.select("Multi-agent delegation is now by explicit request: spawn sub-agents when the user, applicable AGENTS.md, or skill instructions ask for delegation or parallel agent work.", "Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.");
     format!(
         r#"
         {tool_description}
-This spawn_agent tool provides you access to sub-agents that inherit your current model by default. Do not set the `model` field unless the user explicitly asks for a different model or there is a clear task-specific reason. You should follow the rules and guidelines below to use this tool.
+This spawn_agent tool provides you access to sub-agents that inherit your current model by default. Do not set the `model` field unless the user explicitly asks for a different model{override_reason}. You should follow the rules and guidelines below to use this tool.
 
-Multi-agent delegation is now by explicit request: spawn sub-agents when the user, applicable AGENTS.md, or skill instructions ask for delegation or parallel agent work.
+{authorization}
 Requests for depth, thoroughness, research, investigation, or detailed codebase analysis do not count as permission to spawn.
 {agent_role_usage_hint}
 
@@ -742,10 +749,12 @@ fn spawn_agent_tool_description_v2(
     inherited_model_guidance: Option<&str>,
     usage_hint_text: Option<String>,
     description: Option<&str>,
+    mode: codex_protocol::config_types::PromptMode,
 ) -> String {
     let agent_role_guidance = available_models_description.unwrap_or_default();
     let inherited_model_guidance = inherited_model_guidance.unwrap_or_default();
 
+    let bounded_task_guidance = mode.select("Only call this tool for a concrete, bounded subtask that can run independently alongside useful local work; otherwise continue locally.\n", "");
     let tool_description = if let Some(description) = description {
         format!(
             r#"
@@ -761,8 +770,7 @@ fn spawn_agent_tool_description_v2(
 You are then able to refer to this agent as `task_3` or `/root/task1/task_3` interchangeably. However an agent `/root/task2/task_3` would only be able to communicate with this agent via its canonical name `/root/task1/task_3`.
 The spawned agent will have the same tools as you and the ability to spawn its own subagents.
 {inherited_model_guidance}
-Only call this tool for a concrete, bounded subtask that can run independently alongside useful local work; otherwise continue locally.
-It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
+{bounded_task_guidance}It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
 The new agent's canonical task name will be provided to it along with the message.
 
 Note that passing `fork_turns="none"` will not pass any surrounding context to the spawned subagent, which may cause the agent to lack the context it needs to complete its task, whereas `fork_turns="all"` will provide the subagent with all surrounding context."#

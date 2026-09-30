@@ -2577,7 +2577,7 @@ async fn send_input_rejects_empty_message() {
         "send_input",
         function_payload(json!({"target": ThreadId::new().to_string(), "message": ""})),
     );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
+    let Err(err) = SendInputHandler::default().handle(invocation).await else {
         panic!("empty message should be rejected");
     };
     assert_eq!(
@@ -2599,7 +2599,7 @@ async fn send_input_rejects_when_message_and_items_are_both_set() {
             "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
         })),
     );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
+    let Err(err) = SendInputHandler::default().handle(invocation).await else {
         panic!("message+items should be rejected");
     };
     assert_eq!(
@@ -2619,7 +2619,7 @@ async fn send_input_rejects_invalid_id() {
         "send_input",
         function_payload(json!({"target": "not-a-uuid", "message": "hi"})),
     );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
+    let Err(err) = SendInputHandler::default().handle(invocation).await else {
         panic!("invalid id should be rejected");
     };
     let FunctionCallError::RespondToModel(msg) = err else {
@@ -2640,7 +2640,7 @@ async fn send_input_reports_missing_agent() {
         "send_input",
         function_payload(json!({"target": agent_id.to_string(), "message": "hi"})),
     );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
+    let Err(err) = SendInputHandler::default().handle(invocation).await else {
         panic!("missing agent should be reported");
     };
     assert_eq!(
@@ -2670,7 +2670,7 @@ async fn send_input_interrupts_before_prompt() {
             "interrupt": true
         })),
     );
-    SendInputHandler
+    SendInputHandler::default()
         .handle(invocation)
         .await
         .expect("send_input should succeed");
@@ -2721,7 +2721,7 @@ async fn send_input_accepts_structured_items() {
             ]
         })),
     );
-    SendInputHandler
+    SendInputHandler::default()
         .handle(invocation)
         .await
         .expect("send_input should succeed");
@@ -2888,7 +2888,7 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
         "send_input",
         function_payload(json!({"target": agent_id.to_string(), "message": "hello"})),
     );
-    let output = SendInputHandler
+    let output = SendInputHandler::default()
         .handle(send_invocation)
         .await
         .expect("send_input should succeed after resume");

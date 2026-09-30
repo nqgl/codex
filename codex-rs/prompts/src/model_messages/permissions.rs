@@ -30,11 +30,22 @@ pub(crate) struct ResolvedApprovalMessages<'a> {
 }
 
 impl<'a> ResolvedApprovalMessages<'a> {
+    #[cfg(test)]
     pub(crate) fn new(messages: Option<&'a ApprovalMessages>) -> Self {
+        Self::new_for_mode(messages, Default::default())
+    }
+
+    pub(crate) fn new_for_mode(
+        messages: Option<&'a ApprovalMessages>,
+        mode: codex_protocol::config_types::PromptMode,
+    ) -> Self {
         Self {
             never: ResolvedMessage::new(
                 messages.and_then(|m| m.never.as_deref()),
-                APPROVAL_POLICY_NEVER,
+                mode.select(
+                    APPROVAL_POLICY_NEVER,
+                    include_str!("../../templates/upstream/never.md"),
+                ),
             ),
             on_request: ResolvedMessage::new(
                 messages.and_then(|m| m.on_request.as_deref()),

@@ -15,6 +15,7 @@ fn role_segment_filters_base_and_appends_bundled_guidance() {
     );
     for marked in [false, true] {
         let instructions = MultiAgentRoleInstructions::Composed {
+            prompt_mode: Default::default(),
             base: "Role.\n## Plan tool\nOmit role checklist guidance.\n## Work\nContinue."
                 .to_string(),
             marked,

@@ -18,6 +18,7 @@ use crate::tools::registry::ToolExecutor;
 
 const WAIT_FOR_ENVIRONMENT_TOOL_NAME: &str = "wait_for_environment";
 const DEFAULT_TOOL_DESCRIPTION: &str = "Wait for a selected execution environment marked as `starting` to become available. Use this when the current task needs that environment's files, commands, or installed capabilities. If the task can be completed with tools already available (such as connectors), there's no need to wait. Waiting may take several minutes and blocks other tool calls. If startup fails, continue without that environment.";
+const UPSTREAM_TOOL_DESCRIPTION: &str = "Wait for a selected execution environment marked as `starting` to become available. Use this when the current task needs that environment's files, commands, or installed capabilities. Do not wait if the task can be completed using tools already available, such as connectors. Waiting may take several minutes and blocks other tool calls. If startup fails, continue without that environment.";
 const DEFAULT_ENVIRONMENT_ID_DESCRIPTION: &str =
     "The exact environment ID marked as `starting` in `<environment_context>`.";
 const MAX_COMBINED_DESCRIPTION_BYTES: usize = 1_024;
@@ -48,14 +49,22 @@ pub(crate) struct WaitForEnvironmentHandler {
 }
 
 impl WaitForEnvironmentHandler {
-    pub(crate) fn new(config: &WaitForEnvironmentToolConfig) -> Self {
+    pub(crate) fn new(
+        config: &WaitForEnvironmentToolConfig,
+        mode: codex_protocol::config_types::PromptMode,
+    ) -> Self {
         let combined_description_bytes = config
             .tool_description
             .len()
             .saturating_add(config.environment_id_description.len());
         if combined_description_bytes <= MAX_COMBINED_DESCRIPTION_BYTES {
             let handler = Self {
-                tool_description: config.tool_description.clone(),
+                tool_description: if config.tool_description == DEFAULT_TOOL_DESCRIPTION {
+                    mode.select(DEFAULT_TOOL_DESCRIPTION, UPSTREAM_TOOL_DESCRIPTION)
+                        .to_owned()
+                } else {
+                    config.tool_description.clone()
+                },
                 environment_id_description: config.environment_id_description.clone(),
             };
             if serde_json::to_vec(&handler.spec())
@@ -68,16 +77,22 @@ impl WaitForEnvironmentHandler {
         tracing::warn!(
             "oversized wait_for_environment tool configuration; falling back to Core defaults"
         );
-        Self::default()
+        Self::default_for_mode(mode)
+    }
+
+    pub(crate) fn default_for_mode(mode: codex_protocol::config_types::PromptMode) -> Self {
+        Self {
+            tool_description: mode
+                .select(DEFAULT_TOOL_DESCRIPTION, UPSTREAM_TOOL_DESCRIPTION)
+                .to_owned(),
+            environment_id_description: DEFAULT_ENVIRONMENT_ID_DESCRIPTION.to_string(),
+        }
     }
 }
 
 impl Default for WaitForEnvironmentHandler {
     fn default() -> Self {
-        Self {
-            tool_description: DEFAULT_TOOL_DESCRIPTION.to_string(),
-            environment_id_description: DEFAULT_ENVIRONMENT_ID_DESCRIPTION.to_string(),
-        }
+        Self::default_for_mode(Default::default())
     }
 }
 

@@ -21,6 +21,22 @@ static CONTINUATION_PROMPT_WITHOUT_UPDATE_PLAN: LazyLock<Template> = LazyLock::n
     )
 });
 
+static UPSTREAM_CONTINUATION_TEMPLATE: LazyLock<Template> = LazyLock::new(|| {
+    parse_embedded_template(
+        include_str!("../templates/goals/continuation_upstream.md"),
+        "goals/continuation_upstream.md",
+    )
+});
+
+static UPSTREAM_CONTINUATION_WITHOUT_UPDATE_PLAN: LazyLock<Template> = LazyLock::new(|| {
+    parse_embedded_template(
+        &without_update_plan_instructions(include_str!(
+            "../templates/goals/continuation_upstream.md"
+        )),
+        "goals/continuation_upstream.md",
+    )
+});
+
 static BUDGET_LIMIT_PROMPT_TEMPLATE: LazyLock<Template> = LazyLock::new(|| {
     parse_embedded_template(
         include_str!("../templates/goals/budget_limit.md"),
@@ -53,8 +69,9 @@ pub(crate) fn objective_updated_steering_item(goal: &ThreadGoal) -> ResponseItem
 pub(crate) fn continuation_steering_item(
     goal: &ThreadGoal,
     update_plan_enabled: bool,
+    mode: codex_protocol::config_types::PromptMode,
 ) -> ResponseItem {
-    goal_context_input_item(continuation_prompt(goal, update_plan_enabled))
+    goal_context_input_item(continuation_prompt(goal, update_plan_enabled, mode))
 }
 
 fn goal_context_input_item(prompt: String) -> ResponseItem {
@@ -64,7 +81,11 @@ fn goal_context_input_item(prompt: String) -> ResponseItem {
     ))
 }
 
-fn continuation_prompt(goal: &ThreadGoal, update_plan_enabled: bool) -> String {
+fn continuation_prompt(
+    goal: &ThreadGoal,
+    update_plan_enabled: bool,
+    mode: codex_protocol::config_types::PromptMode,
+) -> String {
     let objective = escape_xml_text(&goal.objective);
     let tokens_used = goal.tokens_used.to_string();
     let token_budget = goal
@@ -77,9 +98,15 @@ fn continuation_prompt(goal: &ThreadGoal, update_plan_enabled: bool) -> String {
         .unwrap_or_else(|| "unbounded".to_string());
 
     let template = if update_plan_enabled {
-        &*CONTINUATION_PROMPT_TEMPLATE
+        mode.select(
+            &*CONTINUATION_PROMPT_TEMPLATE,
+            &*UPSTREAM_CONTINUATION_TEMPLATE,
+        )
     } else {
-        &*CONTINUATION_PROMPT_WITHOUT_UPDATE_PLAN
+        mode.select(
+            &*CONTINUATION_PROMPT_WITHOUT_UPDATE_PLAN,
+            &*UPSTREAM_CONTINUATION_WITHOUT_UPDATE_PLAN,
+        )
     };
     template
         .render([

@@ -159,7 +159,7 @@ pub async fn run(
     }
 
     // 8. Spawn the consolidation agent.
-    let prompt = agent::get_prompt(&root, config.memories.version);
+    let prompt = agent::get_prompt(&root, config.memories.version, config.prompt_mode);
     let agent = match context
         .spawn_consolidation_agent(agent_config, prompt)
         .await
@@ -353,8 +353,12 @@ mod agent {
         Some(agent_config)
     }
 
-    pub(super) fn get_prompt(root: &Path, version: MemoryVersion) -> Vec<UserInput> {
-        let prompt = build_consolidation_prompt_for_version(root, version);
+    pub(super) fn get_prompt(
+        root: &Path,
+        version: MemoryVersion,
+        mode: codex_protocol::config_types::PromptMode,
+    ) -> Vec<UserInput> {
+        let prompt = build_consolidation_prompt_for_version(root, version, mode);
         vec![UserInput::Text {
             text: prompt,
             text_elements: vec![],

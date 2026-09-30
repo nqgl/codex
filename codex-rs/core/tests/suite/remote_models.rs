@@ -568,6 +568,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
         .await;
 
     let remote_model = ModelInfo {
+        prompt_mode: Default::default(),
         slug: REMOTE_MODEL_SLUG.to_string(),
         display_name: "Remote Test".to_string(),
         description: Some("A remote model that requires the test shell".to_string()),
@@ -843,6 +844,7 @@ async fn remote_models_apply_legacy_instructions(auth: CodexAuth) -> Result<()> 
 
     let remote_instructions = "Use the remote instructions template only.";
     let remote_model = ModelInfo {
+        prompt_mode: Default::default(),
         slug: model.to_string(),
         display_name: "Parallel Remote".to_string(),
         description: Some("A remote model with custom instructions".to_string()),
@@ -1431,6 +1433,7 @@ fn test_remote_model_with_policy(
     truncation_policy: TruncationPolicyConfig,
 ) -> ModelInfo {
     ModelInfo {
+        prompt_mode: Default::default(),
         slug: slug.to_string(),
         display_name: format!("{slug} display"),
         description: Some(format!("{slug} description")),

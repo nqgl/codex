@@ -4,6 +4,44 @@ This ledger tracks changes to model-facing instructions. The edits emphasize
 evidence, clear mechanisms, appropriate scope, and concise guidance while
 preserving behavioral constraints.
 
+## Select prompt wording
+
+Use `codex -c 'prompt_mode="upstream"'` to select upstream wording, or
+`codex -c 'prompt_mode="custom"'` to retain this fork's wording. `custom` is
+the default. You can also set `prompt_mode` in `config.toml` or a named profile;
+`default` is an alias for `upstream`.
+
+The CLI forwards the effective mode in thread start, resume, and fork requests.
+An updated daemon resolves prompts per thread, so its launch-time mode is only a
+default. Different clients can use different modes on the same daemon. Existing
+loaded threads retain their configuration; reconnecting does not rewrite them.
+
+Upstream mode uses the selected model's catalog base instructions. It ignores
+local base, developer, and compaction prompt overrides, `model_instructions_file`,
+`model_catalog_json`, and configured multi-agent prompt overrides. It selects
+administrator-managed prompt settings and required catalogs before local choices.
+Project instructions, skills, and managed security policies remain active. It uses
+stock wording for the edited delegation, collaboration, review, Guardian denial,
+goal continuation, memory read, and memory write surfaces. The bundled stock
+alternatives are copied from `rust-v0.159.1`; refresh them during upstream merges.
+
+Both modes retain project instructions, skills, safety policies, and the minimal
+guidance needed by custom-only features such as group mail, Balanced delegation,
+Code Mode bundles, and wake-on-message delivery. Explicit role/task instructions
+also remain active. Neither mode changes tool behavior.
+The unused orchestrator and legacy collab templates have no runtime effect.
+
+Start a fresh session for a clean comparison. Resuming a session retains its
+earlier prompt messages; the switch does not rewrite conversation history.
+
+P0 size review: stock goal continuation, Plan mode, review, memory read, and
+stage-one memory writing templates exceed 1,000 tokens. They are fixed,
+verbatim upstream alternatives; dynamic input handling is unchanged.
+The v1 memory-consolidation template is about 10,770 tokens before interpolation
+(`o200k_base`, tiktoken 0.12). The user explicitly approved this background job
+as an exception to the repository's 10K-per-item cap on September 30, 2026.
+Upstream mode uses it without truncation; custom mode retains the shorter version.
+
 **How to use on upstream update:** for each row,
 `git diff <baseline>..<new-upstream> -- <location>` shows whether
 upstream touched a surface we changed; conflicts on this branch mean

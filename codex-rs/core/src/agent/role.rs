@@ -270,6 +270,31 @@ pub(crate) mod spawn_tool_spec {
         build_from_configs(built_in_roles, user_defined_agent_roles)
     }
 
+    pub(crate) fn build_for_mode(
+        user_defined_agent_roles: &BTreeMap<String, AgentRoleConfig>,
+        mode: codex_protocol::config_types::PromptMode,
+    ) -> String {
+        if mode == codex_protocol::config_types::PromptMode::Custom {
+            return build(user_defined_agent_roles);
+        }
+        let mut roles = built_in::configs().clone();
+        for (name, text) in [
+            (
+                "explorer",
+                include_str!("../../templates/agents/explorer_description_upstream.md"),
+            ),
+            (
+                "worker",
+                include_str!("../../templates/agents/worker_description_upstream.md"),
+            ),
+        ] {
+            if let Some(role) = roles.get_mut(name) {
+                role.description = Some(text.trim_end().to_owned());
+            }
+        }
+        build_from_configs(&roles, user_defined_agent_roles)
+    }
+
     // This function is not inlined for testing purpose.
     fn build_from_configs(
         built_in_roles: &BTreeMap<String, AgentRoleConfig>,

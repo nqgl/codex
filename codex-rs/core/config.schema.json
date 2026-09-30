@@ -1257,6 +1257,9 @@
         "plan_mode_reasoning_effort": {
           "$ref": "#/definitions/ReasoningEffort"
         },
+        "prompt_mode": {
+          "$ref": "#/definitions/PromptMode"
+        },
         "sandbox_mode": {
           "$ref": "#/definitions/SandboxMode"
         },
@@ -3604,6 +3607,14 @@
         }
       },
       "type": "object"
+    },
+    "PromptMode": {
+      "description": "Selects bundled instruction wording without changing tool or safety behavior.",
+      "enum": [
+        "custom",
+        "upstream"
+      ],
+      "type": "string"
     },
     "RawMcpServerConfig": {
       "additionalProperties": false,
@@ -7586,6 +7597,14 @@
         "$ref": "#/definitions/ProjectConfig"
       },
       "type": "object"
+    },
+    "prompt_mode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PromptMode"
+        }
+      ],
+      "description": "Select bundled prompt wording. Upstream ignores local base/developer/compact prompt overrides and model_catalog_json; managed settings, project instructions, and safety policies still apply."
     },
     "realtime": {
       "allOf": [

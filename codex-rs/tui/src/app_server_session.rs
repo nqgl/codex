@@ -1922,6 +1922,10 @@ fn config_request_overrides_from_config(
                 .map(|value| (key.clone(), value))
         })
         .collect();
+    overrides.insert(
+        "prompt_mode".to_string(),
+        serde_json::json!(config.prompt_mode),
+    );
     let mut insert = |key: &str, value: Option<String>| {
         if let Some(value) = value {
             overrides.insert(key.to_string(), serde_json::Value::String(value));
@@ -2584,6 +2588,10 @@ mod workspace_roots_tests;
 #[cfg(test)]
 #[path = "app_server_session/prompt_history_tests.rs"]
 mod prompt_history_tests;
+
+#[cfg(test)]
+#[path = "app_server_session/prompt_mode_tests.rs"]
+mod prompt_mode_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3459,6 +3467,7 @@ mod tests {
         assert_eq!(fork.service_tier, expected_service_tier);
         let string = |value: &str| serde_json::Value::String(value.to_string());
         let expected_config = HashMap::from([
+            ("prompt_mode".to_string(), string("custom")),
             ("model_reasoning_effort".to_string(), string("high")),
             ("model_reasoning_summary".to_string(), string("detailed")),
             ("model_verbosity".to_string(), string("low")),
@@ -3498,6 +3507,7 @@ mod tests {
         assert_eq!(
             params.config,
             Some(HashMap::from([
+                ("prompt_mode".to_string(), serde_json::json!("custom")),
                 (
                     "model_reasoning_summary".to_string(),
                     serde_json::Value::String("detailed".to_string()),

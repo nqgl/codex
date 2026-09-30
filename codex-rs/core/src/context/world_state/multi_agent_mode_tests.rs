@@ -92,6 +92,7 @@ fn unchanged_mode_is_reemitted_after_usage_hint_migration() {
 #[test]
 fn catalog_role_updates_remain_separate_from_active_mode() {
     let catalog_role = |base: &str| MultiAgentRoleInstructions::Composed {
+        prompt_mode: Default::default(),
         base: base.to_string(),
         marked: true,
         omit_update_plan_instructions: false,

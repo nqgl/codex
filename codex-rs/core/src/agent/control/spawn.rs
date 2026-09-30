@@ -1003,22 +1003,23 @@ impl LocalAgentControl {
             forked_rollout_items =
                 truncate_rollout_to_last_n_fork_turns(forked_rollout_items, *last_n_turns);
         }
-        let multi_agent_v2_usage_hint_texts_to_filter: Vec<String> =
-            if multi_agent_version == MultiAgentVersion::V2 {
-                let parent_config = parent_thread.session.get_config().await;
-                let parent_usage_hints = resolve_usage_hints(
-                    &parent_config.multi_agent_v2,
-                    ResolvedModelMessages::bundled().multi_agent(),
-                    !parent_config.update_plan_enabled,
-                );
-                [parent_usage_hints.root, parent_usage_hints.subagent]
-                    .into_iter()
-                    .flatten()
-                    .map(|instructions| instructions.render())
-                    .collect()
-            } else {
-                Vec::new()
-            };
+        let multi_agent_v2_usage_hint_texts_to_filter: Vec<String> = if multi_agent_version
+            == MultiAgentVersion::V2
+        {
+            let parent_config = parent_thread.session.get_config().await;
+            let parent_usage_hints = resolve_usage_hints(
+                &parent_config.multi_agent_v2,
+                ResolvedModelMessages::bundled_for_mode(parent_config.prompt_mode).multi_agent(),
+                !parent_config.update_plan_enabled,
+            );
+            [parent_usage_hints.root, parent_usage_hints.subagent]
+                .into_iter()
+                .flatten()
+                .map(|instructions| instructions.render())
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mut preserve_context_baselines = matches!(fork_mode, SpawnAgentForkMode::FullHistory);
         if preserve_context_baselines {
             for item in forked_rollout_items.iter().rev() {
@@ -1205,7 +1206,7 @@ impl LocalAgentControl {
                 .unwrap_or_else(|| {
                     resolve_usage_hints(
                         &config.multi_agent_v2,
-                        ResolvedModelMessages::bundled().multi_agent(),
+                        ResolvedModelMessages::bundled_for_mode(config.prompt_mode).multi_agent(),
                         !config.update_plan_enabled,
                     )
                     .subagent

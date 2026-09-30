@@ -32,7 +32,11 @@ fn enabled_checklist_preserves_the_original_continuation_prompt() {
         original,
     ));
     assert_eq!(
-        steering::continuation_steering_item(&goal, /*update_plan_enabled*/ true),
+        steering::continuation_steering_item(
+            &goal,
+            /*update_plan_enabled*/ true,
+            Default::default()
+        ),
         expected,
     );
 }
@@ -43,6 +47,7 @@ fn disabled_checklist_preserves_goal_text_that_mentions_the_tool() {
     let item = steering::continuation_steering_item(
         &test_goal(objective),
         /*update_plan_enabled*/ false,
+        Default::default(),
     );
     let ResponseItem::Message { content, .. } = item else {
         panic!("expected goal continuation message");
@@ -53,6 +58,32 @@ fn disabled_checklist_preserves_goal_text_that_mentions_the_tool() {
     assert!(text.contains(objective));
     assert!(!text.contains("If update_plan is available"));
     assert!(text.contains("Completion is a claim about the current state"));
+}
+
+#[test]
+fn upstream_prompt_mode_preserves_goal_parameters() {
+    let goal = test_goal("Complete the deployment checks.");
+    let rendered = Template::parse(include_str!("../templates/goals/continuation_upstream.md"))
+        .expect("stock template")
+        .render([
+            ("objective", goal.objective.as_str()),
+            ("tokens_used", "100"),
+            ("token_budget", "10000"),
+            ("remaining_tokens", "9900"),
+        ])
+        .expect("stock goal prompt");
+    let expected: ResponseItem = ContextualUserFragment::into(InternalModelContextFragment::new(
+        InternalContextSource::from_static("goal"),
+        rendered,
+    ));
+    assert_eq!(
+        steering::continuation_steering_item(
+            &goal,
+            /*update_plan_enabled*/ true,
+            codex_protocol::config_types::PromptMode::Upstream
+        ),
+        expected
+    );
 }
 
 fn test_goal(objective: &str) -> ThreadGoal {

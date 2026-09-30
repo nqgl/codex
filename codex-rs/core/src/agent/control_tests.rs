@@ -2548,6 +2548,7 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
     let turn_context = parent_thread.session.new_default_turn().await;
     let parent_spawn_call_id = "spawn-call-compacted-usage-hints".to_string();
     let catalog_role = |base: &str| MultiAgentRoleInstructions::Composed {
+        prompt_mode: Default::default(),
         base: base.to_string(),
         marked: true,
         omit_update_plan_instructions: false,

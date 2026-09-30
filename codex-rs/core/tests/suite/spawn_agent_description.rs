@@ -79,6 +79,7 @@ fn test_model_info(
     service_tiers: Vec<ModelServiceTier>,
 ) -> ModelInfo {
     ModelInfo {
+        prompt_mode: Default::default(),
         slug: slug.to_string(),
         display_name: display_name.to_string(),
         description: Some(description.to_string()),

@@ -49,6 +49,7 @@ const PROACTIVE_MULTI_AGENT_MODE_TEXT: &str = "Proactive multi-agent delegation 
 /// Model-only role bases and mode alternatives for runtime selection.
 #[derive(Debug, Clone, Copy)]
 pub struct ResolvedMultiAgentMessages<'a> {
+    pub prompt_mode: codex_protocol::config_types::PromptMode,
     pub root: ResolvedMessage<'a>,
     pub subagent: ResolvedMessage<'a>,
     pub explicit: ResolvedMessage<'a>,
@@ -58,10 +59,14 @@ pub struct ResolvedMultiAgentMessages<'a> {
 }
 
 impl<'a> ResolvedMultiAgentMessages<'a> {
-    pub(crate) fn new(messages: Option<&'a MultiAgentMessages>) -> Self {
+    pub(crate) fn new_for_mode(
+        messages: Option<&'a MultiAgentMessages>,
+        prompt_mode: codex_protocol::config_types::PromptMode,
+    ) -> Self {
         let role = messages.and_then(|messages| messages.role.as_ref());
         let mode = messages.and_then(|messages| messages.mode.as_ref());
         Self {
+            prompt_mode,
             root: ResolvedMessage::new(
                 role.and_then(|role| role.root.as_deref()),
                 DEFAULT_MULTI_AGENT_V2_ROOT_AGENT_USAGE_HINT_TEXT,
@@ -72,11 +77,17 @@ impl<'a> ResolvedMultiAgentMessages<'a> {
             ),
             explicit: ResolvedMessage::new(
                 mode.and_then(|mode| mode.explicit.as_deref()),
-                EXPLICIT_REQUEST_ONLY_MULTI_AGENT_MODE_TEXT,
+                prompt_mode.select(
+                    EXPLICIT_REQUEST_ONLY_MULTI_AGENT_MODE_TEXT,
+                    crate::upstream::EXPLICIT_REQUEST_ONLY_MULTI_AGENT_MODE_TEXT,
+                ),
             ),
             proactive: ResolvedMessage::new(
                 mode.and_then(|mode| mode.proactive.as_deref()),
-                PROACTIVE_MULTI_AGENT_MODE_TEXT,
+                prompt_mode.select(
+                    PROACTIVE_MULTI_AGENT_MODE_TEXT,
+                    crate::upstream::PROACTIVE_MULTI_AGENT_MODE_TEXT,
+                ),
             ),
             hint: mode.and_then(|mode| mode.hint_text.as_deref()),
         }

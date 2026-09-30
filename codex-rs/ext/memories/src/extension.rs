@@ -36,6 +36,7 @@ impl MemoriesExtension {
 
 #[derive(Clone, Debug)]
 pub(crate) struct MemoriesExtensionConfig {
+    pub(crate) prompt_mode: codex_protocol::config_types::PromptMode,
     pub(crate) enabled: bool,
     pub(crate) dedicated_tools: bool,
     pub(crate) codex_home: AbsolutePathBuf,
@@ -45,6 +46,7 @@ pub(crate) struct MemoriesExtensionConfig {
 impl MemoriesExtensionConfig {
     fn from_config(config: &Config) -> Self {
         Self {
+            prompt_mode: config.prompt_mode,
             enabled: config.features.enabled(Feature::MemoryTool) && config.memories.use_memories,
             dedicated_tools: config.memories.dedicated_tools,
             codex_home: config.codex_home.clone(),
@@ -67,8 +69,12 @@ impl ContextContributor for MemoriesExtension {
                 return Vec::new();
             }
 
-            let Some(instructions) =
-                build_memory_tool_developer_instructions(&config.codex_home, config.version).await
+            let Some(instructions) = build_memory_tool_developer_instructions(
+                &config.codex_home,
+                config.version,
+                config.prompt_mode,
+            )
+            .await
             else {
                 return Vec::new();
             };

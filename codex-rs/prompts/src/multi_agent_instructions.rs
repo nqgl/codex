@@ -23,6 +23,7 @@ pub enum MultiAgentRoleInstructions {
     Configured(String),
     /// Selected catalog or bundled text, composed with captured runtime guidance.
     Composed {
+        prompt_mode: codex_protocol::config_types::PromptMode,
         base: String,
         marked: bool,
         omit_update_plan_instructions: bool,
@@ -61,6 +62,7 @@ impl ContextualUserFragment for MultiAgentRoleInstructions {
             Self::Configured(text) => text.clone(),
             Self::Composed {
                 base,
+                prompt_mode,
                 omit_update_plan_instructions,
                 max_concurrency,
                 wait_agent_enabled,
@@ -83,7 +85,10 @@ impl ContextualUserFragment for MultiAgentRoleInstructions {
                 );
                 if *expose_model_overrides {
                     text.push_str("\n\n");
-                    text.push_str(DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT);
+                    text.push_str(prompt_mode.select(
+                        DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT,
+                        crate::upstream::DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT,
+                    ));
                 }
                 text
             }

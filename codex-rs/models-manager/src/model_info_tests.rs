@@ -26,6 +26,26 @@ fn config_with_personality(personality: Option<Personality>) -> ModelsManagerCon
 }
 
 #[test]
+fn prompt_mode_is_reapplied_after_catalog_serialization() {
+    let config = ModelsManagerConfig {
+        prompt_mode: codex_protocol::config_types::PromptMode::Upstream,
+        ..Default::default()
+    };
+    let mut native = model_info_from_slug("model-owned-prompt");
+    native.used_fallback_model_metadata = false;
+    native
+        .model_messages
+        .as_mut()
+        .expect("model messages")
+        .instructions_template = Some("Catalog-owned base instructions.".to_owned());
+    let captured = with_config_overrides(native, &config);
+    let wire = serde_json::to_value(&captured).expect("serialize model catalog");
+    assert!(wire.get("prompt_mode").is_none());
+    let decoded = serde_json::from_value(wire).expect("deserialize model catalog");
+    assert_eq!(with_config_overrides(decoded, &config), captured);
+}
+
+#[test]
 fn base_instruction_override_is_literal_and_preserves_catalog_messages() {
     let override_instructions = "override {{ personality }}\n# Personality\nKeep me";
     let persistent_instructions = "Follow up on the active task.";

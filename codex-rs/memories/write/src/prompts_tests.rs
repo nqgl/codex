@@ -61,11 +61,39 @@ fn build_consolidation_prompt_points_to_workspace_diff_and_extension_tree() {
 
     let prompt = build_consolidation_prompt(&memory_root);
 
-    assert!(prompt.contains("Memory workspace diff:"));
     assert!(prompt.contains("phase2_workspace_diff.md"));
     assert!(prompt.contains(&format!(
         "Memory extensions (under {}/):",
         memory_extensions_root.display()
     )));
     assert!(prompt.contains("workspace diff shows deleted extension resource files"));
+}
+
+#[test]
+fn consolidation_prompt_modes_render_complete_templates() {
+    let home = tempdir().expect("memory home");
+    let root = home.path().join("memories");
+    let root_text = root.display().to_string();
+    for mode in [PromptMode::Custom, PromptMode::Upstream] {
+        let source = mode.select(
+            include_str!("../templates/memories/consolidation.md"),
+            include_str!("../templates/memories/consolidation_upstream.md"),
+        );
+        let expected = Template::parse(source)
+            .expect("consolidation template")
+            .render([
+                ("memory_root", root_text.as_str()),
+                ("memory_extensions_folder_structure", ""),
+                ("memory_extensions_primary_inputs", ""),
+                (
+                    "phase2_workspace_diff_file",
+                    crate::workspace_diff::FILENAME,
+                ),
+            ])
+            .expect("complete rendered prompt");
+        assert_eq!(
+            build_consolidation_prompt_for_version(&root, MemoryVersion::V1, mode),
+            expected
+        );
+    }
 }

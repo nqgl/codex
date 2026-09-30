@@ -180,6 +180,7 @@ impl ResolvedStepSettings {
 /// instructions are not mistaken for explicit overrides.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ModelInfoOverrides {
+    pub(crate) prompt_mode: codex_protocol::config_types::PromptMode,
     pub(crate) context_window: Option<i64>,
     pub(crate) auto_compact_token_limit: Option<i64>,
     pub(crate) tool_output_token_limit: Option<usize>,
@@ -189,6 +190,7 @@ pub(crate) struct ModelInfoOverrides {
 impl From<ModelsManagerConfig> for ModelInfoOverrides {
     fn from(config: ModelsManagerConfig) -> Self {
         Self {
+            prompt_mode: config.prompt_mode,
             context_window: config.model_context_window,
             auto_compact_token_limit: config.model_auto_compact_token_limit,
             tool_output_token_limit: config.tool_output_token_limit,
@@ -203,6 +205,7 @@ impl ModelInfoOverrides {
         personality: Option<Personality>,
     ) -> ModelsManagerConfig {
         ModelsManagerConfig {
+            prompt_mode: self.prompt_mode,
             model_context_window: self.context_window,
             model_auto_compact_token_limit: self.auto_compact_token_limit,
             tool_output_token_limit: self.tool_output_token_limit,

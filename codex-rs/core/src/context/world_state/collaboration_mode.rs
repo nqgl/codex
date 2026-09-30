@@ -39,6 +39,16 @@ impl CollaborationModeState {
                 .developer_instructions
                 .clone()
                 .filter(|instructions| !instructions.is_empty())
+                .map(|instructions| {
+                    let custom = ResolvedModelMessages::bundled().collaboration_modes();
+                    if instructions == custom.default.text() {
+                        messages.default.text().to_owned()
+                    } else if instructions == custom.plan.text() {
+                        messages.plan.text().to_owned()
+                    } else {
+                        instructions
+                    }
+                })
         });
         let instructions = instructions.map(|instructions| {
             if update_plan_enabled {
@@ -51,7 +61,8 @@ impl CollaborationModeState {
                     // preset or custom text. Compare whole strings against bundled presets
                     // only to recognize built-in text whose disabled update_plan guidance
                     // we can strip; custom instructions stay unchanged.
-                    let bundled = ResolvedModelMessages::bundled().collaboration_modes();
+                    let bundled = ResolvedModelMessages::bundled_for_mode(messages.prompt_mode)
+                        .collaboration_modes();
                     instructions == bundled.default.text() || instructions == bundled.plan.text()
                 }
             };

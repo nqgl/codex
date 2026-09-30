@@ -116,7 +116,12 @@ async fn start_review_conversation(
     let _ = sub_agent_config.features.disable(Feature::MultiAgentV2);
 
     // Set explicit review rubric for the sub-agent
-    sub_agent_config.base_instructions = Some(crate::REVIEW_PROMPT.to_string());
+    sub_agent_config.base_instructions = Some(
+        config
+            .prompt_mode
+            .select(crate::REVIEW_PROMPT, codex_prompts::UPSTREAM_REVIEW_PROMPT)
+            .to_string(),
+    );
     sub_agent_config.base_instructions_provenance = Some(BaseInstructionsProvenance::Custom);
     sub_agent_config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
 

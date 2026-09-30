@@ -8,6 +8,9 @@ use std::sync::LazyLock;
 /// Review thread system prompt.
 pub const REVIEW_PROMPT: &str = include_str!("../templates/review/rubric.md");
 
+/// Stock rubric from the recorded upstream prompt baseline.
+pub const UPSTREAM_REVIEW_PROMPT: &str = include_str!("../templates/upstream/review.md");
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedReviewRequest {
     pub target: ReviewTarget,

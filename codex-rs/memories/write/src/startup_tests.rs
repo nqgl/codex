@@ -62,6 +62,9 @@ use tokio::time::Instant;
 #[path = "startup_dual_write_tests.rs"]
 mod dual_write;
 
+#[path = "startup_prompt_mode_tests.rs"]
+mod prompt_mode;
+
 #[tokio::test]
 async fn memories_startup_creates_memory_root() -> anyhow::Result<()> {
     let server = start_mock_server().await;
@@ -1349,7 +1352,7 @@ fn phase2_prompt_text(request: &ResponsesRequest) -> String {
     request
         .message_input_texts("user")
         .into_iter()
-        .find(|text| text.contains("Memory workspace diff:"))
+        .find(|text| text.contains(crate::workspace_diff::FILENAME))
         .expect("phase2 prompt text")
 }
 

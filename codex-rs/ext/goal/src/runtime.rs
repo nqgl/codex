@@ -471,9 +471,11 @@ impl GoalRuntimeHandle {
             .get::<TurnStartOptions>()
             .map(|options| options.as_ref().clone())
             .unwrap_or_default();
+        let config = thread.config().await;
         let item = continuation_steering_item(
             &protocol_goal_from_state(goal),
-            thread.config().await.update_plan_enabled,
+            config.update_plan_enabled,
+            config.prompt_mode,
         );
 
         match thread

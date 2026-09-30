@@ -21,6 +21,13 @@ static MEMORY_V2_TEMPLATE: LazyLock<Template> = LazyLock::new(|| {
     )
 });
 
+static UPSTREAM_MEMORY_TEMPLATE: LazyLock<Template> = LazyLock::new(|| {
+    parse_embedded_template(
+        include_str!("../templates/memories/read_path_upstream.md"),
+        "memories/read_path_upstream.md",
+    )
+});
+
 fn parse_embedded_template(source: &'static str, template_name: &str) -> Template {
     match Template::parse(source) {
         Ok(template) => template,
@@ -35,6 +42,7 @@ fn parse_embedded_template(source: &'static str, template_name: &str) -> Templat
 pub(crate) async fn build_memory_tool_developer_instructions(
     codex_home: &AbsolutePathBuf,
     version: MemoryVersion,
+    mode: codex_protocol::config_types::PromptMode,
 ) -> Option<String> {
     let base_path = codex_home.join(version.directory_name());
     let memory_summary_path = base_path.join("memory_summary.md");
@@ -52,7 +60,10 @@ pub(crate) async fn build_memory_tool_developer_instructions(
     }
     let base_path = base_path.display().to_string();
     let template = match version {
-        MemoryVersion::V1 => &MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_TEMPLATE,
+        MemoryVersion::V1 => mode.select(
+            &MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_TEMPLATE,
+            &UPSTREAM_MEMORY_TEMPLATE,
+        ),
         MemoryVersion::V2 => &MEMORY_V2_TEMPLATE,
     };
     template

@@ -130,8 +130,10 @@ pub(crate) fn build_tool_router(
     step_store: &ExtensionData,
     tool_suggest_candidates: Option<&crate::tools::router::ToolSuggestCandidates>,
 ) -> CodexResult<ToolRouter> {
-    let default_agent_type_description =
-        crate::agent::role::spawn_tool_spec::build(&std::collections::BTreeMap::new());
+    let default_agent_type_description = crate::agent::role::spawn_tool_spec::build_for_mode(
+        &std::collections::BTreeMap::new(),
+        model_info.prompt_mode,
+    );
     let wait_for_environment_tool_config = session
         .services
         .thread_extension_data
@@ -279,8 +281,10 @@ pub(crate) fn build_core_tool_registry(
     tool_suggest_candidates: Option<&crate::tools::router::ToolSuggestCandidates>,
     wait_for_environment_tool_config: Option<&Arc<crate::WaitForEnvironmentToolConfig>>,
 ) -> ToolRegistry {
-    let default_agent_type_description =
-        crate::agent::role::spawn_tool_spec::build(&std::collections::BTreeMap::new());
+    let default_agent_type_description = crate::agent::role::spawn_tool_spec::build_for_mode(
+        &std::collections::BTreeMap::new(),
+        model_info.prompt_mode,
+    );
     let context = CoreToolPlanContext {
         tool_policy: &Default::default(),
         turn_context,
@@ -782,8 +786,10 @@ fn agent_type_description(
     turn_context: &TurnContext,
     default_agent_type_description: &str,
 ) -> String {
-    let agent_type_description =
-        crate::agent::role::spawn_tool_spec::build(&turn_context.config.agent_roles);
+    let agent_type_description = crate::agent::role::spawn_tool_spec::build_for_mode(
+        &turn_context.config.agent_roles,
+        turn_context.config.prompt_mode,
+    );
     if agent_type_description.is_empty() {
         default_agent_type_description.to_string()
     } else {
@@ -1160,8 +1166,10 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
                 .wait_for_environment_tool_config
                 .map(Arc::as_ref)
                 .map_or_else(
-                    WaitForEnvironmentHandler::default,
-                    WaitForEnvironmentHandler::new,
+                    || WaitForEnvironmentHandler::default_for_mode(turn_context.config.prompt_mode),
+                    |config| {
+                        WaitForEnvironmentHandler::new(config, turn_context.config.prompt_mode)
+                    },
                 ),
         );
     }
@@ -1319,6 +1327,7 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, registry: &mut Too
                 multi_agent_v2_handler(
                     SpawnAgentHandlerV2::new(
                         SpawnAgentToolOptions {
+                            prompt_mode: turn_context.config.prompt_mode,
                             available_models: turn_context.available_models.clone(),
                             agent_type_description,
                             expose_agent_type: !turn_context.config.agent_roles.is_empty(),
@@ -1403,6 +1412,7 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, registry: &mut Too
             };
             registry.add_with_exposure(
                 SpawnAgentHandler::new(SpawnAgentToolOptions {
+                    prompt_mode: turn_context.config.prompt_mode,
                     available_models: turn_context.available_models.clone(),
                     agent_type_description,
                     expose_agent_type: !turn_context.config.agent_roles.is_empty(),
@@ -1413,7 +1423,7 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, registry: &mut Too
                 }),
                 exposure,
             );
-            registry.add_with_exposure(SendInputHandler, exposure);
+            registry.add_with_exposure(SendInputHandler(turn_context.config.prompt_mode), exposure);
             registry.add_with_exposure(ResumeAgentHandler, exposure);
             registry
                 .add_with_exposure(WaitAgentHandler::new(context.wait_agent_timeouts), exposure);

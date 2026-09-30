@@ -301,7 +301,10 @@ mod job {
         };
         prompt.base_instructions = BaseInstructions {
             text: match config.memories.version {
-                MemoryVersion::V1 => crate::stage_one::PROMPT,
+                MemoryVersion::V1 => config.prompt_mode.select(
+                    crate::stage_one::PROMPT,
+                    include_str!("../templates/memories/stage_one_system_upstream.md"),
+                ),
                 MemoryVersion::V2 => include_str!("../templates/memories/stage_one_system_v2.md"),
             }
             .to_string(),

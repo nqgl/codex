@@ -176,6 +176,7 @@ mod permission_path;
 mod permission_profile_catalog;
 mod permission_profile_selection;
 mod permissions;
+mod prompt_mode;
 mod requirements;
 mod resolved_permission_profile;
 #[cfg(test)]
@@ -684,6 +685,9 @@ pub struct Config {
 
     /// Base instructions override.
     pub base_instructions: Option<String>,
+
+    /// Bundled prompt wording selected for this session and its descendants.
+    pub prompt_mode: codex_protocol::config_types::PromptMode,
 
     /// Origin of the configured base instructions when supplied by another session or lockfile.
     pub base_instructions_provenance: Option<BaseInstructionsProvenance>,
@@ -1663,6 +1667,7 @@ impl Config {
 
     pub fn to_models_manager_config(&self) -> ModelsManagerConfig {
         ModelsManagerConfig {
+            prompt_mode: self.prompt_mode,
             model_context_window: self.model_context_window,
             model_auto_compact_token_limit: self.model_auto_compact_token_limit,
             tool_output_token_limit: self.tool_output_token_limit,
@@ -3237,6 +3242,7 @@ impl Config {
     ) -> std::io::Result<Self> {
         // Keep the large config-construction future off small test thread stacks.
         Box::pin(async move {
+        let prompt_mode = prompt_mode::apply(&mut cfg, &config_layer_stack)?;
         if cfg.experimental_thread_store_endpoint.is_some() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -3978,7 +3984,7 @@ impl Config {
             }
         });
 
-        let compact_prompt = compact_prompt.or(cfg.compact_prompt).and_then(|value| {
+        let compact_prompt = prompt_mode.select(compact_prompt, /*upstream*/ None).or(cfg.compact_prompt).and_then(|value| {
             let trimmed = value.trim();
             if trimmed.is_empty() {
                 None
@@ -3997,12 +4003,14 @@ impl Config {
             "model instructions file",
         )
         .await?;
-        let base_instructions = base_instructions
+        let base_instructions = prompt_mode.select(base_instructions, /*upstream*/ None)
             .or(file_base_instructions)
             .or(cfg.instructions.clone());
         let base_instructions_provenance = base_instructions
             .as_ref()
             .map(|_| BaseInstructionsProvenance::Custom);
+        // Per-request directives also carry functional UI and task guidance. Local prompt
+        // overrides were filtered above; these explicit directives remain available in both modes.
         let developer_instructions = developer_instructions.or(cfg.developer_instructions);
         let include_permissions_instructions = cfg.include_permissions_instructions.unwrap_or(true);
         let include_apps_instructions = cfg.include_apps_instructions.unwrap_or(true);
@@ -4301,6 +4309,7 @@ impl Config {
             notify: cfg.notify,
             base_instructions,
             base_instructions_provenance,
+            prompt_mode,
             personality,
             developer_instructions,
             compact_prompt,

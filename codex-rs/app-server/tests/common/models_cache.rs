@@ -12,6 +12,7 @@ use std::path::Path;
 /// Convert a ModelPreset to ModelInfo for cache storage.
 fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
     ModelInfo {
+        prompt_mode: Default::default(),
         slug: preset.id.clone(),
         display_name: preset.display_name.clone(),
         description: Some(preset.description.clone()),

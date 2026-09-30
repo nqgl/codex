@@ -63,6 +63,7 @@ const PERSISTENT_INSTRUCTIONS: &str = include_str!("../templates/persistent_mode
 #[derive(Debug, Clone, Copy)]
 pub struct ResolvedModelMessages<'a> {
     catalog_messages: Option<&'a ModelMessages>,
+    prompt_mode: codex_protocol::config_types::PromptMode,
 }
 
 impl<'a> ResolvedModelMessages<'a> {
@@ -70,13 +71,20 @@ impl<'a> ResolvedModelMessages<'a> {
     pub fn from_model(model_info: &'a ModelInfo) -> Self {
         Self {
             catalog_messages: model_info.model_messages.as_ref(),
+            prompt_mode: model_info.prompt_mode,
         }
     }
 
     /// Resolves only bundled defaults, independently of any selected model.
     pub fn bundled() -> Self {
+        Self::bundled_for_mode(codex_protocol::config_types::PromptMode::Custom)
+    }
+
+    /// Selects bundled wording for a session, without suppressing catalog overrides.
+    pub fn bundled_for_mode(prompt_mode: codex_protocol::config_types::PromptMode) -> Self {
         Self {
             catalog_messages: None,
+            prompt_mode,
         }
     }
 
@@ -88,9 +96,10 @@ impl<'a> ResolvedModelMessages<'a> {
 
     /// Resolves approval messages and their bundled alternatives.
     pub(crate) fn approvals(self) -> ResolvedApprovalMessages<'a> {
-        ResolvedApprovalMessages::new(
+        ResolvedApprovalMessages::new_for_mode(
             self.catalog_messages
                 .and_then(|messages| messages.approvals.as_ref()),
+            self.prompt_mode,
         )
     }
 
@@ -104,25 +113,28 @@ impl<'a> ResolvedModelMessages<'a> {
 
     /// Resolves mode overrides while retaining bundled alternatives and absent values.
     pub fn collaboration_modes(&self) -> ResolvedCollaborationModeMessages<'a> {
-        ResolvedCollaborationModeMessages::new(
+        ResolvedCollaborationModeMessages::new_for_mode(
             self.catalog_messages
                 .and_then(|messages| messages.collaboration_modes.as_ref()),
+            self.prompt_mode,
         )
     }
 
     /// Resolves multi-agent messages while preserving their catalog or bundled source.
     pub fn multi_agent(&self) -> ResolvedMultiAgentMessages<'a> {
-        ResolvedMultiAgentMessages::new(
+        ResolvedMultiAgentMessages::new_for_mode(
             self.catalog_messages
                 .and_then(|messages| messages.multi_agent.as_ref()),
+            self.prompt_mode,
         )
     }
 
     /// Resolves auto-review policy messages and rejection/timeout instructions.
     pub fn auto_review(&self) -> ResolvedAutoReviewMessages<'a> {
-        ResolvedAutoReviewMessages::new(
+        ResolvedAutoReviewMessages::new_for_mode(
             self.catalog_messages
                 .and_then(|messages| messages.auto_review.as_ref()),
+            self.prompt_mode,
         )
     }
 

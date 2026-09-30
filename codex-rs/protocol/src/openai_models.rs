@@ -402,6 +402,11 @@ const fn is_true(value: &bool) -> bool {
 /// Model metadata returned by the Codex backend `/models` endpoint.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema)]
 pub struct ModelInfo {
+    /// Captured local prompt selection, never part of the model catalog wire format.
+    #[serde(skip)]
+    #[ts(skip)]
+    #[schemars(skip)]
+    pub prompt_mode: crate::config_types::PromptMode,
     /// Model-owned approval coverage. Absent preserves legacy settings; an empty map disables
     /// ordinary Guardian review. Keys are computer_use, shell, file_changes, mcp, network,
     /// and permissions. This does not override mandatory safety or administrator requirements.
@@ -1102,6 +1107,7 @@ mod tests {
             tool_mode: None,
             multi_agent_version: None,
             multi_agent_reasoning_effort: None,
+            prompt_mode: Default::default(),
         }
     }
     #[test]

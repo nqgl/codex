@@ -268,6 +268,10 @@ pub struct ConfigToml {
     /// sanctioned by Codex will likely degrade model performance.
     pub model_instructions_file: Option<AbsolutePathBuf>,
 
+    /// Select bundled prompt wording. Upstream ignores local base/developer/compact prompt
+    /// overrides and model_catalog_json; managed settings, project instructions, and safety policies still apply.
+    pub prompt_mode: Option<codex_protocol::config_types::PromptMode>,
+
     /// Compact prompt used for history compaction.
     pub compact_prompt: Option<String>,
 

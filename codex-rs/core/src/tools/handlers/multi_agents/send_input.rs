@@ -6,7 +6,8 @@ use crate::tools::handlers::multi_agents_spec::create_send_input_tool_v1;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_tools::ToolSpec;
 
-pub(crate) struct Handler;
+#[derive(Default)]
+pub(crate) struct Handler(pub(crate) codex_protocol::config_types::PromptMode);
 
 impl ToolExecutor<ToolInvocation> for Handler {
     fn tool_name(&self) -> ToolName {
@@ -14,7 +15,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
     }
 
     fn spec(&self) -> ToolSpec {
-        create_send_input_tool_v1()
+        create_send_input_tool_v1(self.0)
     }
 
     fn search_info(&self) -> Option<ToolSearchInfo> {

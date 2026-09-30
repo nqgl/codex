@@ -17,6 +17,7 @@ pub const BASE_INSTRUCTIONS: &str = include_str!("../prompt.md");
 const PERSONALITY_SECTION_HEADER: &str = "# Personality";
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
+    model.prompt_mode = config.prompt_mode;
     if let Some(context_window) = config.model_context_window {
         model.context_window = Some(
             model
@@ -99,6 +100,7 @@ fn is_h1_heading(line: &str) -> bool {
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
     ModelInfo {
+        prompt_mode: Default::default(),
         slug: slug.to_string(),
         display_name: slug.to_string(),
         description: None,

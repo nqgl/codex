@@ -33,7 +33,10 @@ pub struct ResolvedAutoReviewMessages<'a> {
 }
 
 impl<'a> ResolvedAutoReviewMessages<'a> {
-    pub(crate) fn new(messages: Option<&'a AutoReviewMessages>) -> Self {
+    pub(crate) fn new_for_mode(
+        messages: Option<&'a AutoReviewMessages>,
+        mode: codex_protocol::config_types::PromptMode,
+    ) -> Self {
         Self {
             policy: messages
                 .and_then(|messages| messages.policy.as_deref())
@@ -46,7 +49,10 @@ impl<'a> ResolvedAutoReviewMessages<'a> {
                 .unwrap_or(NODE_REPL_POLICY),
             rejection_instructions: messages
                 .and_then(|messages| messages.rejection_instructions.as_deref())
-                .unwrap_or(REJECTION_INSTRUCTIONS),
+                .unwrap_or(mode.select(
+                    REJECTION_INSTRUCTIONS,
+                    crate::upstream::REJECTION_INSTRUCTIONS,
+                )),
             timeout_instructions: messages
                 .and_then(|messages| messages.timeout_instructions.as_deref())
                 .unwrap_or(TIMEOUT_INSTRUCTIONS),

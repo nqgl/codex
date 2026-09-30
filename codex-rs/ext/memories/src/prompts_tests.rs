@@ -17,9 +17,13 @@ async fn build_memory_tool_developer_instructions_renders_embedded_template() {
     .await
     .unwrap();
 
-    let instructions = build_memory_tool_developer_instructions(&codex_home, MemoryVersion::V1)
-        .await
-        .unwrap();
+    let instructions = build_memory_tool_developer_instructions(
+        &codex_home,
+        MemoryVersion::V1,
+        Default::default(),
+    )
+    .await
+    .unwrap();
 
     assert!(instructions.contains(&format!(
         "- {}/memory_summary.md (already provided below; do NOT open again)",
@@ -35,6 +39,38 @@ async fn build_memory_tool_developer_instructions_renders_embedded_template() {
 }
 
 #[tokio::test]
+async fn prompt_modes_preserve_memory_paths_and_summary() -> Result<(), Box<dyn std::error::Error>>
+{
+    let home = tempdir()?;
+    let codex_home = AbsolutePathBuf::from_absolute_path(home.path())?;
+    let root = codex_home.join("memories");
+    tokio_fs::create_dir_all(&root).await?;
+    tokio_fs::write(
+        root.join("memory_summary.md"),
+        "A reusable project decision.",
+    )
+    .await?;
+    for mode in [
+        codex_protocol::config_types::PromptMode::Custom,
+        codex_protocol::config_types::PromptMode::Upstream,
+    ] {
+        let prompt = build_memory_tool_developer_instructions(&codex_home, MemoryVersion::V1, mode)
+            .await
+            .expect("memory prompt");
+        let source = mode.select(
+            include_str!("../templates/memories/read_path.md"),
+            include_str!("../templates/memories/read_path_upstream.md"),
+        );
+        let expected = Template::parse(source)?.render([
+            ("base_path", root.display().to_string().as_str()),
+            ("memory_summary", "A reusable project decision."),
+        ])?;
+        assert_eq!(prompt, expected);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn v2_reads_only_its_own_summary_without_falling_back_to_v1()
 -> Result<(), Box<dyn std::error::Error>> {
     let home = tempdir()?;
@@ -44,23 +80,36 @@ async fn v2_reads_only_its_own_summary_without_falling_back_to_v1()
     tokio_fs::create_dir_all(&v1).await?;
     tokio_fs::write(v1.join("memory_summary.md"), "v1\nlegacy content").await?;
     assert_eq!(
-        build_memory_tool_developer_instructions(&codex_home, MemoryVersion::V2).await,
+        build_memory_tool_developer_instructions(
+            &codex_home,
+            MemoryVersion::V2,
+            Default::default()
+        )
+        .await,
         None
     );
     tokio_fs::create_dir_all(&v2).await?;
     tokio_fs::write(v2.join("memory_summary.md"), "v1\nnew pipeline content").await?;
-    let instructions = build_memory_tool_developer_instructions(&codex_home, MemoryVersion::V2)
-        .await
-        .expect("v2 instructions");
+    let instructions = build_memory_tool_developer_instructions(
+        &codex_home,
+        MemoryVersion::V2,
+        Default::default(),
+    )
+    .await
+    .expect("v2 instructions");
     assert!(instructions.contains("new pipeline content"));
     assert!(!instructions.contains("legacy content"));
     assert!(instructions.contains("do not retrieve history speculatively"));
     assert!(instructions.contains(&format!("{}/rollout_summaries/", v2.display())));
     assert!(
-        build_memory_tool_developer_instructions(&codex_home, MemoryVersion::V1)
-            .await
-            .expect("v1 instructions")
-            .contains("legacy content")
+        build_memory_tool_developer_instructions(
+            &codex_home,
+            MemoryVersion::V1,
+            Default::default()
+        )
+        .await
+        .expect("v1 instructions")
+        .contains("legacy content")
     );
     Ok(())
 }

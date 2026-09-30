@@ -54,6 +54,7 @@ pub(crate) fn resolve_usage_hints(
             return None;
         }
         Some(MultiAgentRoleInstructions::Composed {
+            prompt_mode: multi_agent_messages.prompt_mode,
             base: base.to_owned(),
             marked: message.catalog_override().is_some(),
             omit_update_plan_instructions,
@@ -111,6 +112,21 @@ pub(crate) fn effective_multi_agent_mode(step_context: &StepContext) -> Option<M
             ResolvedMessage::Bundled(_) => builtin,
         }
     };
+
+    let multi_agent_mode =
+        if settings.model_info.prompt_mode == codex_protocol::config_types::PromptMode::Upstream {
+            match multi_agent_mode {
+                MultiAgentMode::ExplicitRequestOnly => {
+                    MultiAgentMode::Custom(multi_agent_messages.explicit.text().to_owned())
+                }
+                MultiAgentMode::Proactive => {
+                    MultiAgentMode::Custom(multi_agent_messages.proactive.text().to_owned())
+                }
+                mode @ (MultiAgentMode::Balanced | MultiAgentMode::Custom(_)) => mode,
+            }
+        } else {
+            multi_agent_mode
+        };
 
     match &turn_context.session_source {
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })

@@ -47,6 +47,7 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
     disabled.multi_agent_version = Some(MultiAgentVersion::Disabled);
     let tool = create_spawn_agent_tool_v2(
         SpawnAgentToolOptions {
+            prompt_mode: Default::default(),
             available_models: vec![
                 model_preset("visible", /*show_in_picker*/ true),
                 model_preset("hidden", /*show_in_picker*/ false),
@@ -133,6 +134,7 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
 #[test]
 fn spawn_agent_catalog_description_preserves_generated_context() {
     let options = SpawnAgentToolOptions {
+        prompt_mode: Default::default(),
         available_models: vec![model_preset("visible", /*show_in_picker*/ true)],
         agent_type_description: "Available agent roles: explorer".to_string(),
         expose_spawn_agent_model_overrides: true,
@@ -177,6 +179,7 @@ fn spawn_agent_catalog_description_preserves_generated_context() {
 #[test]
 fn spawn_agent_tool_v1_keeps_legacy_fork_context_field() {
     let tool = create_spawn_agent_tool_v1(SpawnAgentToolOptions {
+        prompt_mode: Default::default(),
         available_models: Vec::new(),
         agent_type_description: "role help".to_string(),
         expose_agent_type: true,
@@ -231,6 +234,7 @@ fn spawn_agent_tool_v1_keeps_legacy_fork_context_field() {
 fn spawn_agent_tool_caps_visible_model_summaries() {
     let tool = create_spawn_agent_tool_v2(
         SpawnAgentToolOptions {
+            prompt_mode: Default::default(),
             available_models: vec![
                 model_preset("first", /*show_in_picker*/ true),
                 model_preset("second", /*show_in_picker*/ true),
@@ -287,6 +291,7 @@ fn spawn_agent_tool_caps_reasoning_effort_value_length() {
 fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
     let tool = create_spawn_agent_tool_v2(
         SpawnAgentToolOptions {
+            prompt_mode: Default::default(),
             available_models: vec![model_preset("visible", /*show_in_picker*/ true)],
             agent_type_description: "role help".to_string(),
             expose_agent_type: false,
@@ -323,6 +328,7 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
 fn spawn_agent_tool_hides_model_controls_without_override_exposure() {
     let tool = create_spawn_agent_tool_v2(
         SpawnAgentToolOptions {
+            prompt_mode: Default::default(),
             available_models: vec![model_preset("visible", /*show_in_picker*/ true)],
             agent_type_description: "role help".to_string(),
             expose_agent_type: false,
